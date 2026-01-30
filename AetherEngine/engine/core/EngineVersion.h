@@ -1,4 +1,6 @@
 #pragma once
+#include <string>
+#include <sstream>
 
 // This file defines the version of the Aether Engine.
 namespace aether

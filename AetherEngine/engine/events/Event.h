@@ -34,7 +34,6 @@ namespace aether {
 	*	if (event.GetCategoryFlags() & EventCategoryInput) { ... }
 	*/
 	enum EventCategory {
-		None = 0,
 		EventCategoryApplication = (1 << 0), // 1
 		EventCategoryInput = (1 << 1), // 2
 		EventCategoryKeyboard = (1 << 2), // 4
