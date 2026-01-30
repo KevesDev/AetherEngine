@@ -1,16 +1,25 @@
 #include <iostream>
-#include "EngineVersion.h"
-#include "Log.h"
-#include "Engine.h"
+#include "../core/EngineVersion.h"
+#include "../core/Log.h"
+#include "../core/Engine.h"
 
-// Entry point for the Aether Client application.
-// Right now it's just testing output.
 int main()
 {
-    aether::Log::Write(aether::LogLevel::Info, "Client starting up");
+    // 1. DEFINE WHO I AM (Immutable)
+    aether::EngineSpecification spec;
+    spec.Name = "Aether Client";
+    spec.Type = aether::ApplicationType::Client;
 
-    // Start the core engine
-    aether::Engine engine;
+    // 2. DEFINE USER PREFERENCES (Mutable/Loadable)
+    aether::WindowSettings settings;
+    settings.Title = "Aether Game";
+    settings.Width = 1280;
+    settings.Height = 720;
+    settings.VSync = true;
+
+    // 3. START ENGINE
+    aether::Engine engine(spec, settings);
     engine.Run();
+
     return 0;
 }

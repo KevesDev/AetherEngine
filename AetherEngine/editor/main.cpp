@@ -10,7 +10,7 @@ int main()
     aether::Log::Write(aether::LogLevel::Info, "Editor starting up");
     
     // Start the core engine
-    aether::Engine engine;
+	aether::Engine engine("Editor"); // Pass "Editor" as the app name for the window title
     engine.Run();
     return 0;
 }
