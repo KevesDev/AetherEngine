@@ -1,12 +1,11 @@
 ﻿# CMakeLists.txt for AetherEngine client application
 
-# Build the client executable
 add_executable(aether_client
     main.cpp
 )
 
-# Link against the core engine library
+# Link against the Unified Engine Library
 target_link_libraries(aether_client
     PRIVATE
-        aether_core
+        aether_engine
 )
