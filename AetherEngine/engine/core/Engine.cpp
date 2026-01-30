@@ -38,16 +38,33 @@ namespace aether {
     {
     }
 
+	// --- Layer Management ---
+    void Engine::PushLayer(Layer* layer)
+    {
+        m_LayerStack.PushLayer(layer);
+        layer->OnAttach();
+    }
+
+	// --- Overlay Management ---
+    void Engine::PushOverlay(Layer* layer)
+    {
+        m_LayerStack.PushOverlay(layer);
+        layer->OnAttach();
+    }
+
     void Engine::OnEvent(Event& e)
     {
-        // Example: Log every event to console (Great for debugging Phase 3)
-        // Log::Write(LogLevel::Trace, e.ToString());
-
-        // Dispatcher: Routes the event to the correct function
         EventDispatcher dispatcher(e);
-
-        // If the event is "WindowClose", call "OnWindowClose"
         dispatcher.Dispatch<WindowCloseEvent>(std::bind(&Engine::OnWindowClose, this, std::placeholders::_1));
+
+        // --- EVENT PROPAGATION ---
+        // Iterate BACKWARDS through the stack (Overlay -> Layer)
+        for (auto it = m_LayerStack.rbegin(); it != m_LayerStack.rend(); ++it)
+        {
+            if (e.Handled)
+                break;
+            (*it)->OnEvent(e);
+        }
     }
 
     void Engine::Run()
@@ -57,11 +74,23 @@ namespace aether {
 
         while (m_Running) {
             AetherTime::Update();
+            TimeStep timestep = AetherTime::DeltaTime(); // Implicit cast from double to float
 
-            // Optional: Log time occasionally, not every frame (spammy)
-            // Log::Write(LogLevel::Info, "dt: " + std::to_string(AetherTime::DeltaTime()));
+			// --- UPDATE LAYERS ---
+            // Forward: Layer 0 (Game) -> Layer N (Overlay)
+            for (Layer* layer : m_LayerStack)
+                layer->OnUpdate(timestep);
 
-            // 3. Update the Window (Poll inputs, Swap buffers)
+			// --- IMGUI RENDERING ---
+            // We only do this if we aren't a headless server!
+            if (m_ImGuiLayer)
+            {
+                m_ImGuiLayer->Begin();
+                for (Layer* layer : m_LayerStack)
+                    layer->OnImGuiRender();
+                m_ImGuiLayer->End();
+            }
+
 			// Only update window if it exists (i.e., not a Server)
             if (m_Window) {
                 m_Window->OnUpdate();

@@ -2,6 +2,8 @@
 #include "../platform/Window.h"
 #include "../events/Event.h"
 #include "../events/ApplicationEvent.h"
+#include "Layers/LayerStack.h"
+#include "Layers/ImGuiLayer.h"
 #include <string>
 #include <memory>
 
@@ -36,9 +38,13 @@ namespace aether {
         virtual ~Engine();
 
         void Run();
-
-        // This is the function that receives ALL events from the window
         void OnEvent(Event& e);
+
+        void PushLayer(Layer* layer);
+        void PushOverlay(Layer* layer);
+
+        static Engine& Get() { return *s_Instance; }
+        Window& GetWindow() { return *m_Window; }
 
         // Getters so we can check "Am I a Server?" later
         const EngineSpecification& GetSpec() const { return m_Spec; }
@@ -50,8 +56,10 @@ namespace aether {
         std::unique_ptr<Window> m_Window;
         bool m_Running = true;
 
-        // Store the spec for runtime checks (e.g. "If Server, don't play sound")
         EngineSpecification m_Spec;
+        LayerStack m_LayerStack;
+        static Engine* s_Instance;
+        ImGuiLayer* m_ImGuiLayer;
     };
 
 }

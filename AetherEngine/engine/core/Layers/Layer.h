@@ -1,5 +1,6 @@
 #pragma once
 
+#include "../AetherTime.h"
 #include "../events/Event.h"
 #include <string>
 
@@ -15,10 +16,14 @@ namespace aether {
         Layer(const std::string& name = "Layer");
         virtual ~Layer();
 
-        // Called when the layer is added to the stack
+        // Called when the layer is added/removed to the stack
         virtual void OnAttach() {}
-        // Called when the layer is removed
         virtual void OnDetach() {}
+
+		// Called every frame with delta time (for Game Logic)
+        virtual void OnUpdate(TimeStep ts) {}
+		// Called every frame for ImGui rendering (for UI)
+        virtual void OnImGuiRender() {}
 
         // Called every frame (for Game Logic)
         virtual void OnUpdate() {}

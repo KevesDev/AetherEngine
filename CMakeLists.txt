@@ -18,6 +18,17 @@ FetchContent_Declare(
 )
 FetchContent_MakeAvailable(SDL2)
 
+message(STATUS "Fetching IMGUI...")
+FetchContent_Declare(
+  imgui
+  GIT_REPOSITORY https://github.com/ocornut/imgui.git
+  GIT_TAG docking # We need the docking branch for editor windows!
+)
+FetchContent_MakeAvailable(imgui)
+
+# --- 2. PROJECT DEFINITION ---
+project ("AetherEngine")
+
 # --- 2. BUILD SUBDIRECTORIES ---
 # This points to the inner "AetherEngine" folder
 add_subdirectory(AetherEngine)
