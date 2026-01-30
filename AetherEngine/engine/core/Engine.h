@@ -7,35 +7,29 @@
 
 namespace aether {
 
+    enum class ApplicationType {
+        Client,
+        Server,
+        Editor
+    };
+
+	// Immutable engine specification
+    struct EngineSpecification {
+        std::string Name = "Aether Engine";
+        ApplicationType Type = ApplicationType::Client;
+    };
+
+	// User-configurable window settings
+    struct WindowSettings {
+        std::string Title = "Aether Application";
+        uint32_t Width = 1280;
+        uint32_t Height = 720;
+        bool VSync = true;
+    };
+
+
     class Engine
     {
-
-    // ENGINE SPECIFICATION (The "DNA" of the application)
-    // These are hard-coded in main.cpp and cannot be changed by the user.
-        enum class ApplicationType {
-            Client,
-            Server,
-            Editor
-        };
-
-		// Holds basic info about the engine/application
-        struct EngineSpecification {
-            std::string Name = "Aether Engine";
-            ApplicationType Type = ApplicationType::Client;
-            // Future: CommandLineArgs, WorkingDirectory, etc.
-        };
-
-        // WINDOW SETTINGS (The "Preferences")
-        // These could eventually be loaded from a "User.ini" file.
-        struct WindowSettings {
-            std::string Title = "Aether Application";
-            uint32_t Width = 1280;
-            uint32_t Height = 720;
-            bool VSync = true;
-            // Future: FullscreenMode, WindowDecoration, etc.
-        };
-
-
     public:
 		// Constructor - Takes EngineSpecification and optional WindowSettings
         Engine(const EngineSpecification& engineSpec, const WindowSettings& windowSettings = WindowSettings());
