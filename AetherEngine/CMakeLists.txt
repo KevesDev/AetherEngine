@@ -1,0 +1,1 @@
+﻿# refer to global CMake settings
