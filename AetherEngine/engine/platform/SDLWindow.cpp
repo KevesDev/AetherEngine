@@ -143,4 +143,9 @@ namespace aether {
         return m_Data.VSync;
     }
 
+	// --- Factory Method ---
+    Window* Window::Create(const WindowProps& props) {
+        return new SDLWindow(props);
+    }
+
 }

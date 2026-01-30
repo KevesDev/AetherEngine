@@ -9,3 +9,10 @@ target_link_libraries(aether_client
     PRIVATE
         aether_engine
 )
+
+# AUTOMATED FIX: Copy SDL2.dll to the same folder as the executable
+add_custom_command(TARGET aether_client POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+    $<TARGET_FILE:SDL2>
+    $<TARGET_FILE_DIR:aether_client>
+)
