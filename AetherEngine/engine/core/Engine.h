@@ -4,6 +4,7 @@
 #include "../events/ApplicationEvent.h"
 #include "Layers/LayerStack.h"
 #include "Layers/ImGuiLayer.h"
+#include "../scene/World.h"
 #include <string>
 #include <memory>
 
@@ -50,6 +51,13 @@ namespace aether {
         // Getters so we can check "Am I a Server?" later
         const EngineSpecification& GetSpec() const { return m_Spec; }
 
+        // --- NEW: World Management API ---
+        // The Application (Client/Editor) calls this to load a specific map/level.
+        void SetWorld(std::unique_ptr<World> newWorld);
+
+        // Returns null if no world is loaded (e.g., during startup or main menu)
+        World* GetWorld() { return m_ActiveWorld.get(); }
+
     private:
         // Handles specific events (e.g., clicking X to close)
         bool OnWindowClose(WindowCloseEvent& e);
@@ -61,6 +69,9 @@ namespace aether {
         LayerStack m_LayerStack;
         static Engine* s_Instance;
         ImGuiLayer* m_ImGuiLayer;
+
+        // This holds the current ECS Registry and Simulation State.
+        std::unique_ptr<World> m_ActiveWorld;
     };
 
 }

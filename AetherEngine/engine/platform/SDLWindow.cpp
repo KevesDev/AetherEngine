@@ -3,15 +3,19 @@
 // Required to let ImGui see SDL events
 #include "backends/imgui_impl_sdl2.h"
 
-// Include our specific event types
+// Events
 #include "../events/ApplicationEvent.h"
 #include "../events/KeyEvent.h"
 #include "../events/MouseEvent.h" 
+
+// Logging & Macros
 #include "../core/Log.h"
+
+// Allowed here because this is the specific SDL/OpenGL implementation
+#include <SDL_opengl.h> 
 
 namespace aether {
 
-    // --- Constructor / Destructor ---
     SDLWindow::SDLWindow(const WindowProps& props) {
         Init(props);
     }
@@ -20,25 +24,22 @@ namespace aether {
         Shutdown();
     }
 
-    // --- Initialization ---
     void SDLWindow::Init(const WindowProps& props) {
         m_Data.Title = props.Title;
         m_Data.Width = props.Width;
         m_Data.Height = props.Height;
         m_Data.VSync = props.VSync;
-        m_Data.Mode = props.Mode; // Store the mode
+        m_Data.Mode = props.Mode;
 
         // 1. Initialize SDL System
         if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_TIMER | SDL_INIT_GAMECONTROLLER) != 0) {
-            Log::Write(LogLevel::Error, "SDL_Init Error: " + std::string(SDL_GetError()));
+            AETHER_CORE_ERROR("SDL_Init Error: {0}", SDL_GetError());
             return;
         }
 
         // 2. Setup Window Flags
-        // Start with the base flags
         SDL_WindowFlags window_flags = (SDL_WindowFlags)(SDL_WINDOW_OPENGL | SDL_WINDOW_RESIZABLE | SDL_WINDOW_ALLOW_HIGHDPI);
 
-        // Apply the requested Mode
         if (m_Data.Mode == WindowMode::Fullscreen) {
             window_flags = (SDL_WindowFlags)(window_flags | SDL_WINDOW_FULLSCREEN);
         }
@@ -58,7 +59,7 @@ namespace aether {
         );
 
         if (!m_Window) {
-            Log::Write(LogLevel::Error, "Failed to create window: " + std::string(SDL_GetError()));
+            AETHER_CORE_ERROR("Failed to create window: {0}", SDL_GetError());
             return;
         }
 
@@ -76,22 +77,23 @@ namespace aether {
         SDL_Quit();
     }
 
-    // --- The Event Loop (The Translator) ---
+    // --- Abstraction Implementation ---
+    void SDLWindow::Clear() const {
+        // This is the implementation detail hidden from the Engine
+        glClearColor(0.1f, 0.1f, 0.1f, 1.0f);
+        glClear(GL_COLOR_BUFFER_BIT);
+    }
+    // ---------------------------------------
+
     void SDLWindow::OnUpdate() {
         SDL_Event event;
 
-        // Poll every event from the Operating System
         while (SDL_PollEvent(&event)) {
-            // Pass the raw event to ImGui FIRST
-            // This lets ImGui update its state (mouse pos, clicks, typing)
             ImGui_ImplSDL2_ProcessEvent(&event);
 
-
-            // If no callback is set, we can't process events
             if (!m_Data.EventCallback) continue;
 
             switch (event.type) {
-                // --- Window Events ---
             case SDL_QUIT: {
                 WindowCloseEvent e;
                 m_Data.EventCallback(e);
@@ -106,11 +108,8 @@ namespace aether {
                 }
                 break;
             }
-
-                                // --- Keyboard Events ---
             case SDL_KEYDOWN: {
                 KeyPressedEvent e(event.key.keysym.sym, event.key.repeat);
-                std::cout << "Key pressed!";
                 m_Data.EventCallback(e);
                 break;
             }
@@ -119,8 +118,6 @@ namespace aether {
                 m_Data.EventCallback(e);
                 break;
             }
-
-                          // --- Mouse Events ---
             case SDL_MOUSEBUTTONDOWN: {
                 MouseButtonPressedEvent e(event.button.button);
                 m_Data.EventCallback(e);
@@ -144,11 +141,9 @@ namespace aether {
             }
         }
 
-        // Render the frame
         SDL_GL_SwapWindow((SDL_Window*)m_Window);
     }
 
-    // --- Attributes ---
     void SDLWindow::SetVsync(bool enabled) {
         if (enabled)
             SDL_GL_SetSwapInterval(1);
@@ -162,9 +157,7 @@ namespace aether {
         return m_Data.VSync;
     }
 
-    // --- Factory Method ---
     Window* Window::Create(const WindowProps& props) {
         return new SDLWindow(props);
     }
-
 }

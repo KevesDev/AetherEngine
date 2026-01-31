@@ -1,5 +1,4 @@
 ﻿project(engine)
-project(engine)
 
 find_package(OpenGL REQUIRED)
 
@@ -10,6 +9,7 @@ add_library(aether_engine "")
 add_subdirectory(core)
 add_subdirectory(events)
 add_subdirectory(platform)
+add_subdirectory(input)
 
 # 3. Link ImGui, SDL, OpenGL to the whole engine
 if (TARGET SDL2::SDL2)

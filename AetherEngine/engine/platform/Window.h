@@ -1,81 +1,60 @@
 #pragma once
 
-#include  <string>
+#include <string>
 #include <functional>
 #include "../core/EngineVersion.h"
-/*
-* The Window is just an interface for creating and managing application windows.
-* It defines what a window does, not how.
-* The actual code/implementation should be in the SDLWindow class, hidden from
-* the rest of the engine.
-* We use the Factory as a static method that creates the correct window for the current platform.
-*/
 
 namespace aether {
-	// Define window mode first
-	enum WindowMode {
-		Windowed,
-		Borderless,
-		Fullscreen,
-		Maximized // Editor standard
-	};
 
-	// Forward declare Event class
-	class Event;
+    enum WindowMode {
+        Windowed,
+        Borderless,
+        Fullscreen,
+        Maximized
+    };
 
-	// Defines properties for creating a window.
-	struct WindowProps {
-		std::string Title;
-		uint32_t Width;
-		uint32_t Height;
-		WindowMode Mode;
-		bool VSync;
+    class Event;
 
-		// Constructor with default values
-		WindowProps(const std::string& title = "Aether Engine",// +EngineVersion,
-			uint32_t width = 1280,
-			uint32_t height = 720,
-			WindowMode mode = WindowMode::Maximized,
-			bool vsync = true
-			)
-			: Title(title), Width(width), Height(height), Mode(mode), VSync(vsync){
-		}
-	};
+    struct WindowProps {
+        std::string Title;
+        uint32_t Width;
+        uint32_t Height;
+        WindowMode Mode;
+        bool VSync;
 
-	// The Window class must be Pure Virtual.
-	// This ensures that engine/core has zero dependencies on SDL code.
+        WindowProps(const std::string& title = "Aether Engine",
+            uint32_t width = 1280,
+            uint32_t height = 720,
+            WindowMode mode = WindowMode::Maximized,
+            bool vsync = true
+        )
+            : Title(title), Width(width), Height(height), Mode(mode), VSync(vsync) {
+        }
+    };
 
-	// Interface representing a desktop system based Window
-	class Window {
-	public:
+    class Window {
+    public:
+        virtual ~Window() = default;
 
-		// Standard virtual destructor
-		virtual ~Window() = default;
+        virtual void OnUpdate() = 0;
 
-		// Update window (core loop)
-		virtual void OnUpdate() = 0;
+        // --- Render Context Abstraction ---
+        // Engine calls this to clear the screen at the start of a frame.
+        // This removes the need for OpenGL headers in Engine.cpp
+        virtual void Clear() const = 0;
+        // ---------------------------------------
 
-		// Getters
-		virtual uint32_t GetWidth() const = 0;
-		virtual uint32_t GetHeight() const = 0;
+        virtual uint32_t GetWidth() const = 0;
+        virtual uint32_t GetHeight() const = 0;
 
-		// Window attributes
-		virtual void SetVsync(bool enabled) = 0;
-		virtual bool IsVsync() const = 0;
+        virtual void SetVsync(bool enabled) = 0;
+        virtual bool IsVsync() const = 0;
 
-		// Required for Graphics APIs (Vulkan/DirectX/OpenGL) later
-		// Get the native window handle (for example, HWND on Windows)
-		// This is needed for creating graphics contexts.
-		virtual void* GetNativeWindow() const = 0;
+        virtual void* GetNativeWindow() const = 0;
 
-		// Event callbacks (production key)
-		// This allows the Window to say "I was resized" without the Engine polling for it.
-		// Use std::function to store a lambda or function pointer.
-		using EventCallbackFn = std::function<void(Event&)>;
-		virtual void SetEventCallback(const EventCallbackFn& callback) = 0;
+        using EventCallbackFn = std::function<void(Event&)>;
+        virtual void SetEventCallback(const EventCallbackFn& callback) = 0;
 
-		// Static creation method (the Factory)
-		// This is implemented in the .cpp file, effectively "choosing" the platform.
-		static Window* Create(const WindowProps& props = WindowProps());
-	};
+        static Window* Create(const WindowProps& props = WindowProps());
+    };
 }
