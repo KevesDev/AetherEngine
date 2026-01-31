@@ -1,6 +1,4 @@
 ﻿cmake_minimum_required(VERSION 3.20)
-
-# CRITICAL FIX: We add "C" here because SDL2 is a C library.
 project(AetherEngine LANGUAGES CXX C)
 
 set(CMAKE_CXX_STANDARD 20)
@@ -10,6 +8,7 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 # --- 1. DOWNLOAD DEPENDENCIES ---
 include(FetchContent)
 
+# 1.1 Fetch SDL2
 message(STATUS "Fetching SDL2...")
 FetchContent_Declare(
   SDL2
@@ -18,17 +17,39 @@ FetchContent_Declare(
 )
 FetchContent_MakeAvailable(SDL2)
 
-message(STATUS "Fetching IMGUI...")
+# 1.2 Fetch ImGui (AND BUILD IT MANUALLY)
+message(STATUS "Fetching ImGui...")
 FetchContent_Declare(
   imgui
   GIT_REPOSITORY https://github.com/ocornut/imgui.git
-  GIT_TAG docking # We need the docking branch for editor windows!
+  GIT_TAG docking
 )
-FetchContent_MakeAvailable(imgui)
+FetchContent_GetProperties(imgui)
+if(NOT imgui_POPULATED)
+  FetchContent_Populate(imgui)
+  
+  # MANUALLY CREATE THE LIBRARY TARGET
+  # This tells CMake: "Take these C++ files and build them into imgui.lib"
+  add_library(imgui STATIC
+      ${imgui_SOURCE_DIR}/imgui.cpp
+      ${imgui_SOURCE_DIR}/imgui_demo.cpp
+      ${imgui_SOURCE_DIR}/imgui_draw.cpp
+      ${imgui_SOURCE_DIR}/imgui_tables.cpp
+      ${imgui_SOURCE_DIR}/imgui_widgets.cpp
+      # We also include the backends we need
+      ${imgui_SOURCE_DIR}/backends/imgui_impl_sdl2.cpp
+      ${imgui_SOURCE_DIR}/backends/imgui_impl_opengl3.cpp
+  )
 
-# --- 2. PROJECT DEFINITION ---
-project ("AetherEngine")
+  # Tell the rest of the project where to find headers
+  target_include_directories(imgui PUBLIC 
+      ${imgui_SOURCE_DIR} 
+      ${imgui_SOURCE_DIR}/backends
+  )
+
+  # ImGui backends need access to SDL headers
+  target_link_libraries(imgui PUBLIC SDL2::SDL2)
+endif()
 
 # --- 2. BUILD SUBDIRECTORIES ---
-# This points to the inner "AetherEngine" folder
 add_subdirectory(AetherEngine)

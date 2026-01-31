@@ -23,7 +23,7 @@ namespace aether {
         m_Data.Width = props.Width;
         m_Data.Height = props.Height;
         m_Data.VSync = props.VSync;
-        m_Data.Mode = props.Mode;
+        m_Data.Mode = props.Mode; // <--- NEW: Store the mode
 
         // 1. Initialize SDL System
         if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_TIMER | SDL_INIT_GAMECONTROLLER) != 0) {
@@ -31,11 +31,22 @@ namespace aether {
             return;
         }
 
-        // 2. Setup Window Flags (Hidden from user)
+        // 2. Setup Window Flags
+        // Start with the base flags you had
         SDL_WindowFlags window_flags = (SDL_WindowFlags)(SDL_WINDOW_OPENGL | SDL_WINDOW_RESIZABLE | SDL_WINDOW_ALLOW_HIGHDPI);
 
+        // Apply the requested Mode
+        if (m_Data.Mode == WindowMode::Fullscreen) {
+            window_flags = (SDL_WindowFlags)(window_flags | SDL_WINDOW_FULLSCREEN);
+        }
+        else if (m_Data.Mode == WindowMode::Borderless) {
+            window_flags = (SDL_WindowFlags)(window_flags | SDL_WINDOW_BORDERLESS);
+        }
+        else if (m_Data.Mode == WindowMode::Maximized) {
+            window_flags = (SDL_WindowFlags)(window_flags | SDL_WINDOW_MAXIMIZED);
+        }
+
         // 3. Create the Native Window
-        // We cast to (SDL_Window*) to match the Library type, fixing the typo issue
         m_Window = (SDL_Window*)SDL_CreateWindow(
             m_Data.Title.c_str(),
             SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED,
@@ -143,7 +154,7 @@ namespace aether {
         return m_Data.VSync;
     }
 
-	// --- Factory Method ---
+    // --- Factory Method ---
     Window* Window::Create(const WindowProps& props) {
         return new SDLWindow(props);
     }

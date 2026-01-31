@@ -1,6 +1,8 @@
 ﻿project(engine)
 project(engine)
 
+find_package(OpenGL REQUIRED)
+
 # 1. Define the ONE shared engine library
 add_library(aether_engine "")
 
@@ -9,11 +11,11 @@ add_subdirectory(core)
 add_subdirectory(events)
 add_subdirectory(platform)
 
-# 3. Link ImGui and SDL to the whole engine
+# 3. Link ImGui, SDL, OpenGL to the whole engine
 if (TARGET SDL2::SDL2)
-    target_link_libraries(aether_engine PUBLIC SDL2::SDL2 imgui)
+    target_link_libraries(aether_engine PUBLIC SDL2::SDL2 imgui OpenGL::GL)
 elseif (TARGET SDL2)
-    target_link_libraries(aether_engine PUBLIC SDL2 imgui)
+    target_link_libraries(aether_engine PUBLIC SDL2 imgui OpenGL::GL)
 endif()
 
 target_include_directories(aether_engine PUBLIC 

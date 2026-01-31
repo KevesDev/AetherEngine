@@ -3,32 +3,37 @@
 #include "../core/EngineVersion.h"
 #include "../core/Log.h"
 #include "../core/Config.h"
-#include "../core/Layers/ImGuiLayer.h" // <--- Don't forget this!
+#include "../core/Layers/ImGuiLayer.h"
+#include "layers/EditorLayer.h"
 
 int main()
 {
     aether::Log::Write(aether::LogLevel::Info, "Aether Editor starting up...");
 
-    // 1. IDENTITY
+    // Identity and Preferences
     aether::EngineSpecification spec;
     spec.Name = "Aether Editor";
     spec.Type = aether::ApplicationType::Editor;
 
-    // 2. PREFERENCES
     aether::WindowSettings settings;
-    settings.Width = 1600;
-    settings.Height = 900;
+    settings.Width = 1280; // Ignored if Maximized
+    settings.Height = 720;
     settings.Title = "Aether Editor";
+
+    // Set the window to maximize automatically
+    settings.Mode = aether::WindowMode::Maximized;
+
+    // Load any saved settings (like Title or VSync)
     aether::Config::Load("editor.ini", settings);
 
-    // 3. CREATE ENGINE
     aether::Engine engine(spec, settings);
 
-    // 4. ADD IMGUI OVERLAY (MUST BE BEFORE RUN!)
-    aether::ImGuiLayer* imguiLayer = new aether::ImGuiLayer();
-    engine.PushOverlay(imguiLayer);
+    // 1. Push ImGui Overlay (Handles the backend)
+    engine.PushOverlay(new aether::ImGuiLayer());
 
-    // 5. START ENGINE
+    // 2. Push Editor Layer (Draws the UI)
+    engine.PushLayer(new aether::EditorLayer());
+
     engine.Run();
 
     return 0;

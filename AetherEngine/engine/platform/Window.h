@@ -16,7 +16,8 @@ namespace aether {
 	enum WindowMode {
 		Windowed,
 		Borderless,
-		Fullscreen
+		Fullscreen,
+		Maximized // Editor standard
 	};
 
 	// Forward declare Event class
@@ -34,7 +35,7 @@ namespace aether {
 		WindowProps(const std::string& title = "Aether Engine",// +EngineVersion,
 			uint32_t width = 1280,
 			uint32_t height = 720,
-			WindowMode mode = WindowMode::Windowed,
+			WindowMode mode = WindowMode::Maximized,
 			bool vsync = true
 			)
 			: Title(title), Width(width), Height(height), Mode(mode), VSync(vsync){
