@@ -20,3 +20,4 @@ CMakeUserPresets.json
 /.vs
 /build
 /out/build/x64-debug
+/AetherEngine/build

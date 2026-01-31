@@ -1,5 +1,8 @@
 #include "SDLWindow.h"
 
+// Required to let ImGui see SDL events
+#include "backends/imgui_impl_sdl2.h"
+
 // Include our specific event types
 #include "../events/ApplicationEvent.h"
 #include "../events/KeyEvent.h"
@@ -23,7 +26,7 @@ namespace aether {
         m_Data.Width = props.Width;
         m_Data.Height = props.Height;
         m_Data.VSync = props.VSync;
-        m_Data.Mode = props.Mode; // <--- NEW: Store the mode
+        m_Data.Mode = props.Mode; // Store the mode
 
         // 1. Initialize SDL System
         if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_TIMER | SDL_INIT_GAMECONTROLLER) != 0) {
@@ -32,7 +35,7 @@ namespace aether {
         }
 
         // 2. Setup Window Flags
-        // Start with the base flags you had
+        // Start with the base flags
         SDL_WindowFlags window_flags = (SDL_WindowFlags)(SDL_WINDOW_OPENGL | SDL_WINDOW_RESIZABLE | SDL_WINDOW_ALLOW_HIGHDPI);
 
         // Apply the requested Mode
@@ -79,6 +82,10 @@ namespace aether {
 
         // Poll every event from the Operating System
         while (SDL_PollEvent(&event)) {
+            // Pass the raw event to ImGui FIRST
+            // This lets ImGui update its state (mouse pos, clicks, typing)
+            ImGui_ImplSDL2_ProcessEvent(&event);
+
 
             // If no callback is set, we can't process events
             if (!m_Data.EventCallback) continue;
@@ -103,6 +110,7 @@ namespace aether {
                                 // --- Keyboard Events ---
             case SDL_KEYDOWN: {
                 KeyPressedEvent e(event.key.keysym.sym, event.key.repeat);
+                std::cout << "Key pressed!";
                 m_Data.EventCallback(e);
                 break;
             }
