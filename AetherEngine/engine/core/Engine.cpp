@@ -2,6 +2,7 @@
 #include "Log.h"
 #include "AetherTime.h"
 #include "EngineVersion.h"
+#include "VFS.h"
 
 // NOTE: No Platform/Graphics headers allowed here. 
 // The Engine uses the Window interface for all rendering commands.
@@ -13,14 +14,20 @@ namespace aether {
     Engine::Engine(const EngineSpecification& engineSpec, const WindowSettings& windowSettings)
         : m_Spec(engineSpec), m_ImGuiLayer(nullptr)
     {
-        // 1. Strict Singleton Enforcement
+        // Strict Singleton Enforcement
         // If this triggers, we have a major architectural flaw in the application entry point.
         AETHER_ASSERT(!s_Instance, "Engine already exists! Do not instantiate multiple Engines.");
         s_Instance = this;
 
         AETHER_CORE_INFO("Initializing {0}...", m_Spec.Name);
 
-        // 2. Headless vs Windowed Initialization
+        // --- VFS INITIALIZATION ---
+        // Mount the local "assets" folder to the virtual root "/assets"
+        // TODO: In the future, this will be replaced by mounting a .pak file for Release builds.
+        VFS::Mount("/assets", "assets");
+        // --------------------------
+
+        // Headless vs Windowed Initialization
         if (m_Spec.Type == ApplicationType::Server)
         {
             AETHER_CORE_INFO("Running in HEADLESS mode (Server Type Detected).");

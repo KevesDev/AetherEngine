@@ -2,6 +2,7 @@
 
 // Required to let ImGui see SDL events
 #include "backends/imgui_impl_sdl2.h"
+#include <imgui.h> // Required to access ImGui::GetCurrentContext()
 
 // Events
 #include "../events/ApplicationEvent.h"
@@ -31,9 +32,11 @@ namespace aether {
         m_Data.VSync = props.VSync;
         m_Data.Mode = props.Mode;
 
+        AETHER_CORE_INFO("Creating Window {0} ({1}x{2})", props.Title, props.Width, props.Height);
+
         // 1. Initialize SDL System
         if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_TIMER | SDL_INIT_GAMECONTROLLER) != 0) {
-            AETHER_CORE_ERROR("SDL_Init Error: {0}", SDL_GetError());
+            AETHER_CORE_CRITICAL("SDL_Init Failed: {0}", SDL_GetError());
             return;
         }
 
@@ -59,21 +62,36 @@ namespace aether {
         );
 
         if (!m_Window) {
-            AETHER_CORE_ERROR("Failed to create window: {0}", SDL_GetError());
-            return;
+            AETHER_CORE_CRITICAL("Failed to create SDL Window: {0}", SDL_GetError());
+            return; // Caller (Engine) will Assert on null window
         }
 
         // 4. Create OpenGL Context
         m_Context = SDL_GL_CreateContext((SDL_Window*)m_Window);
-        SDL_GL_MakeCurrent((SDL_Window*)m_Window, m_Context);
+
+        // Critical Check: If this fails, we have no renderer.
+        if (!m_Context) {
+            AETHER_CORE_CRITICAL("Failed to create OpenGL Context: {0}", SDL_GetError());
+            return;
+        }
+
+        if (SDL_GL_MakeCurrent((SDL_Window*)m_Window, m_Context) != 0) {
+            AETHER_CORE_ERROR("Failed to make OpenGL Context current: {0}", SDL_GetError());
+        }
+
+        // Log Driver Info (Crucial for debugging specific GPU issues)
+        AETHER_CORE_INFO("OpenGL Info:");
+        AETHER_CORE_INFO("  Vendor:   {0}", (const char*)glGetString(GL_VENDOR));
+        AETHER_CORE_INFO("  Renderer: {0}", (const char*)glGetString(GL_RENDERER));
+        AETHER_CORE_INFO("  Version:  {0}", (const char*)glGetString(GL_VERSION));
 
         // 5. Apply VSync
         SetVsync(m_Data.VSync);
     }
 
     void SDLWindow::Shutdown() {
-        SDL_GL_DeleteContext(m_Context);
-        SDL_DestroyWindow((SDL_Window*)m_Window);
+        if (m_Context) SDL_GL_DeleteContext(m_Context);
+        if (m_Window) SDL_DestroyWindow((SDL_Window*)m_Window);
         SDL_Quit();
     }
 
@@ -89,7 +107,12 @@ namespace aether {
         SDL_Event event;
 
         while (SDL_PollEvent(&event)) {
-            ImGui_ImplSDL2_ProcessEvent(&event);
+
+            // Prevent crash if ImGui is not initialized (e.g. in Client Runtime)
+            // The Client has no ImGui context, so calling ProcessEvent will assert/crash.
+            if (ImGui::GetCurrentContext() != nullptr) {
+                ImGui_ImplSDL2_ProcessEvent(&event);
+            }
 
             if (!m_Data.EventCallback) continue;
 
@@ -145,12 +168,13 @@ namespace aether {
     }
 
     void SDLWindow::SetVsync(bool enabled) {
-        if (enabled)
-            SDL_GL_SetSwapInterval(1);
-        else
-            SDL_GL_SetSwapInterval(0);
-
-        m_Data.VSync = enabled;
+        // SDL_GL_SetSwapInterval returns -1 on error
+        if (SDL_GL_SetSwapInterval(enabled ? 1 : 0) < 0) {
+            AETHER_CORE_WARN("Failed to set VSync to {0}: {1}", enabled, SDL_GetError());
+        }
+        else {
+            m_Data.VSync = enabled;
+        }
     }
 
     bool SDLWindow::IsVsync() const {

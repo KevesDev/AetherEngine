@@ -10,6 +10,9 @@ add_subdirectory(core)
 add_subdirectory(events)
 add_subdirectory(platform)
 add_subdirectory(input)
+add_subdirectory(vendor)
+add_subdirectory(scene)
+add_subdirectory(ecs)
 
 # 3. Link ImGui, SDL, OpenGL to the whole engine
 if (TARGET SDL2::SDL2)

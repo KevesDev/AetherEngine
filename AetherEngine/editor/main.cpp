@@ -12,13 +12,11 @@
 #include "../scene/Scene.h"
 #include "../ecs/Entity.h"
 
+// Include the Serializer
+#include "../scene/SceneSerializer.h"
+
 int main()
 {
-    // Use the Macro, not raw Log::Write (for consistency)
-    // But since Macros are in the Engine lib, we might need to initialize logging first?
-    // Actually, Engine constructor inits logging, so raw access is safer here.
-    aether::Log::Write(aether::LogLevel::Info, "Aether Editor starting up...");
-
     // 1. Identity
     aether::EngineSpecification spec;
     spec.Name = "Aether Editor";
@@ -32,21 +30,42 @@ int main()
     settings.Mode = aether::WindowMode::Maximized;
     aether::Config::Load("editor.ini", settings);
 
-    // 3. Start Engine
+    // 3. Start Engine (Initializes VFS and Logging)
     aether::Engine engine(spec, settings);
 
     // --- 4. INITIALIZE WORLD STATE ---
     // The Editor needs a "Sandbox" world to edit.
     auto world = std::make_unique<aether::World>("Editor Sandbox");
-
-    // Spawn a Test Entity so we can see the Red Box
     aether::Scene* scene = world->GetScene();
-    if (scene) {
-        auto player = scene->CreateEntity("Player One");
-        player.AddComponent<aether::SpriteComponent>({ 1.0f, 0.2f, 0.2f, 1.0f }); // Red Color
 
-        // Log it (using Engine macro now that Engine exists)
-        AETHER_CORE_INFO("Spawned Initial Entity: {0}", (uint32_t)player.GetID());
+    if (scene) {
+        // --- TEST: Create Data ---
+        AETHER_CORE_INFO("--- SERIALIZER TEST START ---");
+
+        auto player = scene->CreateEntity("Red Box");
+        player.AddComponent<aether::SpriteComponent>(1.0f, 0.2f, 0.2f, 1.0f); // Red Color
+        player.GetComponent<aether::TransformComponent>().X = 200.0f; // Move it slightly
+
+        AETHER_CORE_INFO("1. Created Entity: {0} (Red Box)", (uint32_t)player.GetID());
+
+        // --- TEST: Serialize (Save) ---
+        aether::SceneSerializer serializer(scene);
+
+        // Note: VFS maps "/assets" -> local "assets" folder.
+        // Make sure the "assets" folder exists in your project directory!
+        std::string path = "/assets/Level1.json";
+        serializer.Serialize(path);
+
+        // --- TEST: Destroy Data (Clear World) ---
+        scene->DestroyEntity(player);
+        AETHER_CORE_INFO("2. Destroyed Entity. World is empty.");
+
+        // --- TEST: Deserialize (Load) ---
+        serializer.Deserialize(path);
+
+        // Verification: Check if entity exists (The Serializer logs "Deserialized Scene...")
+        AETHER_CORE_INFO("3. Loaded Scene. Check for Red Box.");
+        AETHER_CORE_INFO("--- SERIALIZER TEST END ---");
     }
 
     // Set the world active
@@ -54,10 +73,7 @@ int main()
     // ---------------------------------
 
     // 5. Push Layers
-    // Overlay: ImGui Backend
     engine.PushOverlay(new aether::ImGuiLayer());
-
-    // Layer: Editor UI (Draws the Inspector/Viewport)
     engine.PushLayer(new aether::EditorLayer());
 
     // 6. Loop
