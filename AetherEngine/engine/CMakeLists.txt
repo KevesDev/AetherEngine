@@ -13,12 +13,27 @@ add_subdirectory(input)
 add_subdirectory(vendor)
 add_subdirectory(scene)
 add_subdirectory(ecs)
+add_subdirectory(renderer)
 
-# 3. Link ImGui, SDL, OpenGL to the whole engine
+# 3. Link ImGui, SDL, OpenGL, GLAD, AND GLM to the whole engine
 if (TARGET SDL2::SDL2)
-    target_link_libraries(aether_engine PUBLIC SDL2::SDL2 imgui OpenGL::GL)
+    # Added 'glad' and 'glm::glm' to this list
+    target_link_libraries(aether_engine PUBLIC 
+        SDL2::SDL2 
+        imgui 
+        glad 
+        OpenGL::GL
+        glm::glm
+    )
 elseif (TARGET SDL2)
-    target_link_libraries(aether_engine PUBLIC SDL2 imgui OpenGL::GL)
+    # Added 'glad' and 'glm::glm' to this list
+    target_link_libraries(aether_engine PUBLIC 
+        SDL2 
+        imgui 
+        glad 
+        OpenGL::GL
+        glm::glm
+    )
 endif()
 
 target_include_directories(aether_engine PUBLIC 

@@ -1,4 +1,5 @@
 #include "Engine.h"
+#include "../renderer/Renderer2D.h"
 #include "Log.h"
 #include "AetherTime.h"
 #include "EngineVersion.h"
@@ -46,6 +47,11 @@ namespace aether {
             AETHER_ASSERT(m_Window, "Window failed to create!");
 
             m_Window->SetEventCallback(std::bind(&Engine::OnEvent, this, std::placeholders::_1));
+
+            // --- Initialize Renderer (Only when Window exists) ---
+            Renderer2D::Init();
+            AETHER_CORE_INFO("Renderer2D Initialized");
+            // --------------------------------------------------------
 
             AETHER_CORE_INFO("Window Initialized: {0}x{1} (VSync: {2})",
                 windowSettings.Width, windowSettings.Height, windowSettings.VSync ? "On" : "Off");

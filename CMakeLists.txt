@@ -24,6 +24,12 @@ FetchContent_MakeAvailable(SDL2)
 
 # 1.2 Fetch ImGui (AND BUILD IT MANUALLY)
 message(STATUS "Fetching ImGui...")
+
+# FIX: Allow FetchContent_Populate to work without warnings in newer CMake
+if(POLICY CMP0169)
+  cmake_policy(SET CMP0169 OLD)
+endif()
+
 FetchContent_Declare(
   imgui
   GIT_REPOSITORY https://github.com/ocornut/imgui.git
@@ -34,7 +40,6 @@ if(NOT imgui_POPULATED)
   FetchContent_Populate(imgui)
   
   # MANUALLY CREATE THE LIBRARY TARGET
-  # This tells CMake: "Take these C++ files and build them into imgui.lib"
   add_library(imgui STATIC
       ${imgui_SOURCE_DIR}/imgui.cpp
       ${imgui_SOURCE_DIR}/imgui_demo.cpp
@@ -55,6 +60,16 @@ if(NOT imgui_POPULATED)
   # ImGui backends need access to SDL headers
   target_link_libraries(imgui PUBLIC SDL2::SDL2)
 endif()
+
+# 1.3 Fetch GLM (Math Library)
+# FIX: Updated to 1.0.1 to support modern CMake
+message(STATUS "Fetching GLM...")
+FetchContent_Declare(
+  glm
+  GIT_REPOSITORY https://github.com/g-truc/glm.git
+  GIT_TAG 1.0.1 
+)
+FetchContent_MakeAvailable(glm)
 
 # --- 2. BUILD SUBDIRECTORIES ---
 add_subdirectory(AetherEngine)
