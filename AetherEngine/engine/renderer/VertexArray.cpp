@@ -1,9 +1,9 @@
 #include "VertexArray.h"
+#include "../core/Log.h"
 #include <glad/glad.h>
 
 namespace aether {
 
-    // Helper to convert our generic ShaderDataType to OpenGL specific enum
     static GLenum ShaderDataTypeToOpenGLBaseType(ShaderDataType type)
     {
         switch (type)
@@ -26,11 +26,13 @@ namespace aether {
 
     VertexArray::VertexArray()
     {
-        glCreateVertexArrays(1, &m_RendererID);
+        glGenVertexArrays(1, &m_RendererID);
+        AETHER_CORE_TRACE("VertexArray Created: ID {0}", m_RendererID);
     }
 
     VertexArray::~VertexArray()
     {
+        AETHER_CORE_TRACE("Deleting VertexArray: ID {0}", m_RendererID);
         glDeleteVertexArrays(1, &m_RendererID);
     }
 
@@ -54,7 +56,6 @@ namespace aether {
         const auto& layout = vertexBuffer->GetLayout();
         uint32_t index = 0;
 
-        // This loop automatically tells OpenGL how to read our data structure
         for (const auto& element : layout)
         {
             glEnableVertexAttribArray(index);
@@ -65,6 +66,7 @@ namespace aether {
                 layout.GetStride(),
                 (const void*)element.Offset);
 
+            AETHER_CORE_TRACE("VAO {0}: Enabled Attribute {1} ({2})", m_RendererID, index, element.Name);
             index++;
         }
 
@@ -77,6 +79,7 @@ namespace aether {
         indexBuffer->Bind();
 
         m_IndexBuffer = indexBuffer;
+        AETHER_CORE_TRACE("VAO {0}: IndexBuffer {1} attached.", m_RendererID, indexBuffer->GetRendererID());
     }
 
 }

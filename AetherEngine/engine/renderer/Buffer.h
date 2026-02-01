@@ -136,6 +136,7 @@ namespace aether {
         void Unbind() const;
 
         uint32_t GetCount() const { return m_Count; }
+        uint32_t GetRendererID() const { return m_RendererID; }
 
     private:
         uint32_t m_RendererID;

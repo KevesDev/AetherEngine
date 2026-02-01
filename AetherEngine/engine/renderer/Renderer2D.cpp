@@ -2,6 +2,9 @@
 #include "VertexArray.h"
 #include "Shader.h"
 #include "../core/Log.h"
+
+#include <glad/glad.h> 
+#include <glm/glm.hpp>
 #include <glm/gtc/matrix_transform.hpp> 
 
 namespace aether {
@@ -12,60 +15,64 @@ namespace aether {
         std::shared_ptr<Shader> FlatColorShader;
     };
 
-    static Renderer2DStorage* s_Data;
+    static Renderer2DStorage* s_Data = nullptr;
 
     void Renderer2D::Init()
     {
+        AETHER_CORE_INFO("Renderer2D: Initializing...");
         s_Data = new Renderer2DStorage();
 
+        // Phase 1: Vertex Array
+        AETHER_CORE_TRACE("Renderer2D: Creating Vertex Array...");
         s_Data->QuadVertexArray = std::make_shared<VertexArray>();
+        AETHER_CORE_INFO("Renderer2D: Vertex Array created.");
 
+        // Phase 2: Vertex Buffer
+        AETHER_CORE_TRACE("Renderer2D: Creating Vertex Buffer...");
         float squareVertices[4 * 3] = {
-            -0.5f, -0.5f, 0.0f,  // Bottom Left
-             0.5f, -0.5f, 0.0f,  // Bottom Right
-             0.5f,  0.5f, 0.0f,  // Top Right
-            -0.5f,  0.5f, 0.0f   // Top Left
+            -0.5f, -0.5f, 0.0f,
+             0.5f, -0.5f, 0.0f,
+             0.5f,  0.5f, 0.0f,
+            -0.5f,  0.5f, 0.0f
         };
+        AETHER_CORE_TRACE("Renderer2D: Vertex Buffer created.");
 
-        // PRODUCTION FIX: Explicitly cast size_t to uint32_t for cross-platform safety
-        uint32_t vertexBufferSize = static_cast<uint32_t>(sizeof(squareVertices));
-        std::shared_ptr<VertexBuffer> squareVB = std::make_shared<VertexBuffer>(squareVertices, vertexBufferSize);
-
-        squareVB->SetLayout({
-            { ShaderDataType::Float3, "a_Position" }
-            });
-
+        auto squareVB = std::make_shared<VertexBuffer>(squareVertices, static_cast<uint32_t>(sizeof(squareVertices)));
+        squareVB->SetLayout({ { ShaderDataType::Float3, "a_Position" } });
         s_Data->QuadVertexArray->AddVertexBuffer(squareVB);
 
+        // This call binds the VAO and VBO together
+        s_Data->QuadVertexArray->AddVertexBuffer(squareVB);
+        AETHER_CORE_INFO("Renderer2D: Vertex Buffer added.");
+
+        // Phase 3: Index Buffer
+        AETHER_CORE_TRACE("Renderer2D: Creating Index Buffer...");
         uint32_t squareIndices[6] = { 0, 1, 2, 2, 3, 0 };
-
-        // PRODUCTION FIX: Explicitly cast count to uint32_t
-        uint32_t indexBufferCount = static_cast<uint32_t>(sizeof(squareIndices) / sizeof(uint32_t));
-        std::shared_ptr<IndexBuffer> squareIB = std::make_shared<IndexBuffer>(squareIndices, indexBufferCount);
-
+        auto squareIB = std::make_shared<IndexBuffer>(squareIndices, 6);
         s_Data->QuadVertexArray->SetIndexBuffer(squareIB);
+        AETHER_CORE_INFO("Renderer2D: Index Buffer set.");
 
+        // Phase 4: Shader
+        AETHER_CORE_INFO("Renderer2D: Loading FlatColor Shader...");
         s_Data->FlatColorShader = std::make_shared<Shader>("/assets/shaders/FlatColor.glsl", "/assets/shaders/FlatColor.glsl");
-        AETHER_ASSERT(s_Data->FlatColorShader, "Failed to load Renderer2D FlatColor Shader!");
+        AETHER_ASSERT(s_Data->FlatColorShader, "Renderer2D: Shader failed to initialize!");
+        AETHER_CORE_INFO("Renderer2D: Initialized Successfully.");
     }
 
-    void Renderer2D::Shutdown()
-    {
+    void Renderer2D::Shutdown() {
         delete s_Data;
+        s_Data = nullptr;
     }
 
-    void Renderer2D::BeginScene(const glm::mat4& viewProjection)
-    {
+    void Renderer2D::BeginScene(const glm::mat4& viewProjection) {
+        AETHER_ASSERT(s_Data, "Renderer2D must be initialized!");
         s_Data->FlatColorShader->Bind();
         s_Data->FlatColorShader->SetMat4("u_ViewProjection", &viewProjection[0][0]);
     }
 
-    void Renderer2D::EndScene()
-    {
-    }
+    void Renderer2D::EndScene() {}
 
-    void Renderer2D::DrawQuad(const glm::vec2& position, const glm::vec2& size, const glm::vec4& color)
-    {
+    void Renderer2D::DrawQuad(const glm::vec2& position, const glm::vec2& size, const glm::vec4& color) {
         s_Data->FlatColorShader->Bind();
         s_Data->FlatColorShader->SetFloat4("u_Color", color.r, color.g, color.b, color.a);
 

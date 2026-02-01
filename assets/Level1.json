@@ -1,21 +1,21 @@
 {
-    "Entities": [
-        {
-            "Sprite": {
-                "A": 1.0,
-                "B": 0.20000000298023224,
-                "G": 0.20000000298023224,
-                "R": 1.0
-            },
-            "Tag": "Red Box",
-            "Transform": {
-                "Rotation": 0.0,
-                "ScaleX": 1.0,
-                "ScaleY": 1.0,
-                "X": 200.0,
-                "Y": 0.0
-            }
-        }
-    ],
-    "Scene": "Untitled"
+  "Entities": [
+    {
+      "Sprite": {
+        "A": 1.0,
+        "B": 0.2,
+        "G": 0.2,
+        "R": 1.0
+      },
+      "Tag": "Red Box",
+      "Transform": {
+        "Rotation": 0.0,
+        "ScaleX": 100.0,
+        "ScaleY": 100.0,
+        "X": 640.0,
+        "Y": 360.0
+      }
+    }
+  ],
+  "Scene": "Main Scene"
 }

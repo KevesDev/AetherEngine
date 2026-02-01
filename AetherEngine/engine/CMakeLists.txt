@@ -17,7 +17,6 @@ add_subdirectory(renderer)
 
 # 3. Link ImGui, SDL, OpenGL, GLAD, AND GLM to the whole engine
 if (TARGET SDL2::SDL2)
-    # Added 'glad' and 'glm::glm' to this list
     target_link_libraries(aether_engine PUBLIC 
         SDL2::SDL2 
         imgui 
@@ -26,7 +25,6 @@ if (TARGET SDL2::SDL2)
         glm::glm
     )
 elseif (TARGET SDL2)
-    # Added 'glad' and 'glm::glm' to this list
     target_link_libraries(aether_engine PUBLIC 
         SDL2 
         imgui 
@@ -38,6 +36,7 @@ endif()
 
 target_include_directories(aether_engine PUBLIC 
     ${CMAKE_CURRENT_SOURCE_DIR}/..
-    ${imgui_SOURCE_DIR} # Allows you to do #include <imgui.h>
-    ${imgui_SOURCE_DIR}/backends # Allows you to do #include <backends/imgui_impl_sdl2.h>
+    ${imgui_SOURCE_DIR}
+    ${imgui_SOURCE_DIR}/backends
+    ${glm_SOURCE_DIR}
 )

@@ -14,7 +14,7 @@ namespace aether {
         ~Scene();
 
         // --- Lifecycle ---
-        void OnUpdate(double dt);
+        void OnUpdate(TimeStep ts);
 
         // --- Entity Management ---
         // Creates an entity with a UUID and default components

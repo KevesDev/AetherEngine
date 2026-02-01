@@ -1,7 +1,9 @@
 #pragma once
 #include <string>
-#include <format> // C++20 standard
-#include <iostream>
+#include <format>
+#include <vector>
+#include <mutex>
+#include <fstream>
 
 // --- Platform Detection & Breakpoint Macro ---
 #if defined(_MSC_VER)
@@ -18,27 +20,32 @@
 
 namespace aether
 {
-    enum class LogLevel
-    {
-        Debug,
-        Info,
-        Warning,
-        Error,
-        Critical
+    enum class LogLevel { Debug, Info, Warning, Error, Critical };
+
+    struct LogEntry {
+        LogLevel Level;
+        std::string Message;
+        std::string Timestamp;
     };
 
     class Log
     {
     public:
+        static void Init(); // Starts the file stream
         static void Write(LogLevel level, const std::string& message);
 
-        // Template helper for formatted printing
-        // Usage: AETHER_CORE_INFO("Loaded texture: {0} ({1}x{2})", name, width, height);
+        // For the ImGui Console to read
+        static const std::vector<LogEntry>& GetHistory() { return s_LogHistory; }
+
         template<typename... Args>
-        static void Print(LogLevel level, std::format_string<Args...> fmt, Args&&... args)
-        {
+        static void Print(LogLevel level, std::format_string<Args...> fmt, Args&&... args) {
             Write(level, std::format(fmt, std::forward<Args>(args)...));
         }
+
+    private:
+        static std::vector<LogEntry> s_LogHistory;
+        static std::ofstream s_LogFile;
+        static std::mutex s_LogMutex;
     };
 }
 

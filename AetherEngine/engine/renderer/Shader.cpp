@@ -1,57 +1,77 @@
 #include "Shader.h"
 #include "../core/Log.h"
-#include "../core/VFS.h" // Loading shaders via Virtual File System
-
+#include "../core/VFS.h"
+#include <sstream>
 #include <vector>
 
 namespace aether {
 
     Shader::Shader(const std::string& vertexPath, const std::string& fragmentPath)
     {
-        // 1. Retrieve the source code from VFS
-        std::string vertexCode = VFS::ReadText(vertexPath);
-        std::string fragmentCode = VFS::ReadText(fragmentPath);
+        // 1. Read source via VFS
+        std::string source = VFS::ReadText(vertexPath);
+        AETHER_ASSERT(!source.empty(), "Shader source is empty or file not found: {0}", vertexPath);
 
-        // Sanity Check: Did the VFS fail?
-        if (vertexCode.empty()) {
-            AETHER_CORE_ERROR("Shader file empty or not found: {0}", vertexPath);
-            return;
+        // 2. Parse the single file into multiple shader sources
+        // This is a robust line-by-line state machine
+        std::stringstream ss(source);
+        std::string line;
+        std::stringstream shaderSources[2]; // 0: Vertex, 1: Fragment
+        int mode = -1; // -1: None, 0: Vertex, 1: Fragment
+
+        while (std::getline(ss, line))
+        {
+            if (line.find("#type") != std::string::npos)
+            {
+                if (line.find("vertex") != std::string::npos)
+                    mode = 0;
+                else if (line.find("fragment") != std::string::npos)
+                    mode = 1;
+
+                AETHER_ASSERT(mode != -1, "Invalid shader type specified in: {0}", vertexPath);
+            }
+            else if (mode != -1)
+            {
+                shaderSources[mode] << line << "\n";
+            }
         }
-        if (fragmentCode.empty()) {
-            AETHER_CORE_ERROR("Shader file empty or not found: {0}", fragmentPath);
-            return;
-        }
 
-        const char* vShaderCode = vertexCode.c_str();
-        const char* fShaderCode = fragmentCode.c_str();
+        std::string vSource = shaderSources[0].str();
+        std::string fSource = shaderSources[1].str();
 
-        // 2. Compile shaders
-        unsigned int vertex, fragment;
+        AETHER_ASSERT(!vSource.empty(), "Vertex shader source is missing in {0}", vertexPath);
+        AETHER_ASSERT(!fSource.empty(), "Fragment shader source is missing in {0}", vertexPath);
 
-        // Vertex Shader
+        const char* vShaderCode = vSource.c_str();
+        const char* fShaderCode = fSource.c_str();
+
+        // 3. Compile Shaders
+        uint32_t vertex, fragment;
+
         vertex = glCreateShader(GL_VERTEX_SHADER);
         glShaderSource(vertex, 1, &vShaderCode, NULL);
         glCompileShader(vertex);
         CheckCompileErrors(vertex, "VERTEX");
 
-        // Fragment Shader
         fragment = glCreateShader(GL_FRAGMENT_SHADER);
         glShaderSource(fragment, 1, &fShaderCode, NULL);
         glCompileShader(fragment);
         CheckCompileErrors(fragment, "FRAGMENT");
 
-        // 3. Shader Program (Linking them together)
+        // 4. Link Program
         m_RendererID = glCreateProgram();
         glAttachShader(m_RendererID, vertex);
         glAttachShader(m_RendererID, fragment);
         glLinkProgram(m_RendererID);
         CheckCompileErrors(m_RendererID, "PROGRAM");
 
-        // 4. Cleanup: The individual shaders are linked now, we can delete the intermediates.
+        // Production Guard: If linking failed, we must know immediately
+        AETHER_ASSERT(m_RendererID != 0, "Shader program linking failed for {0}", vertexPath);
+
         glDeleteShader(vertex);
         glDeleteShader(fragment);
 
-        AETHER_CORE_INFO("Shader Compiled Successfully: {0} / {1}", vertexPath, fragmentPath);
+        AETHER_CORE_INFO("Shader Compiled Successfully: {0}", vertexPath);
     }
 
     Shader::~Shader()
@@ -69,17 +89,18 @@ namespace aether {
         glUseProgram(0);
     }
 
-    void Shader::CheckCompileErrors(GLuint shader, std::string type)
+    void Shader::CheckCompileErrors(uint32_t shader, std::string type)
     {
-        GLint success;
-        GLchar infoLog[1024];
+        int success;
+        char infoLog[1024];
         if (type != "PROGRAM")
         {
             glGetShaderiv(shader, GL_COMPILE_STATUS, &success);
             if (!success)
             {
                 glGetShaderInfoLog(shader, 1024, NULL, infoLog);
-                AETHER_CORE_ERROR("SHADER_COMPILATION_ERROR of type: {0}\n{1}", type, infoLog);
+                AETHER_CORE_ERROR("SHADER_COMPILATION_ERROR ({0}):\n{1}", type, infoLog);
+                AETHER_DEBUGBREAK(); // Force break on shader syntax errors
             }
         }
         else
@@ -88,35 +109,21 @@ namespace aether {
             if (!success)
             {
                 glGetProgramInfoLog(shader, 1024, NULL, infoLog);
-                AETHER_CORE_ERROR("PROGRAM_LINKING_ERROR of type: {0}\n{1}", type, infoLog);
+                AETHER_CORE_ERROR("PROGRAM_LINKING_ERROR:\n{0}", infoLog);
+                AETHER_DEBUGBREAK();
             }
         }
     }
 
-    // --- Uniform Setters ---
-
     void Shader::SetMat4(const std::string& name, const void* value)
     {
-        GLint location = glGetUniformLocation(m_RendererID, name.c_str());
-        // GL_FALSE = Do not transpose the matrix
+        int location = glGetUniformLocation(m_RendererID, name.c_str());
         glUniformMatrix4fv(location, 1, GL_FALSE, (const float*)value);
     }
 
     void Shader::SetFloat4(const std::string& name, float v0, float v1, float v2, float v3)
     {
-        GLint location = glGetUniformLocation(m_RendererID, name.c_str());
+        int location = glGetUniformLocation(m_RendererID, name.c_str());
         glUniform4f(location, v0, v1, v2, v3);
-    }
-
-    void Shader::SetInt(const std::string& name, int value)
-    {
-        GLint location = glGetUniformLocation(m_RendererID, name.c_str());
-        glUniform1i(location, value);
-    }
-
-    void Shader::SetIntArray(const std::string& name, int* values, uint32_t count)
-    {
-        GLint location = glGetUniformLocation(m_RendererID, name.c_str());
-        glUniform1iv(location, count, values);
     }
 }

@@ -1,4 +1,5 @@
 #include "Buffer.h"
+#include "../core/Log.h"
 #include <glad/glad.h>
 
 namespace aether {
@@ -7,22 +8,26 @@ namespace aether {
 
     VertexBuffer::VertexBuffer(uint32_t size)
     {
-        // Create a dynamic buffer (for batch rendering later)
-        glCreateBuffers(1, &m_RendererID);
+        // Using glGen for maximum hardware compatibility
+        glGenBuffers(1, &m_RendererID);
         glBindBuffer(GL_ARRAY_BUFFER, m_RendererID);
         glBufferData(GL_ARRAY_BUFFER, size, nullptr, GL_DYNAMIC_DRAW);
+
+        AETHER_CORE_TRACE("VertexBuffer Created: ID {0} (Size: {1} bytes, Dynamic)", m_RendererID, size);
     }
 
     VertexBuffer::VertexBuffer(float* vertices, uint32_t size)
     {
-        // Create a static buffer (for simple static geometry)
-        glCreateBuffers(1, &m_RendererID);
+        glGenBuffers(1, &m_RendererID);
         glBindBuffer(GL_ARRAY_BUFFER, m_RendererID);
         glBufferData(GL_ARRAY_BUFFER, size, vertices, GL_STATIC_DRAW);
+
+        AETHER_CORE_TRACE("VertexBuffer Created: ID {0} (Size: {1} bytes, Static)", m_RendererID, size);
     }
 
     VertexBuffer::~VertexBuffer()
     {
+        AETHER_CORE_TRACE("Deleting VertexBuffer: ID {0}", m_RendererID);
         glDeleteBuffers(1, &m_RendererID);
     }
 
@@ -47,17 +52,18 @@ namespace aether {
     IndexBuffer::IndexBuffer(uint32_t* indices, uint32_t count)
         : m_Count(count)
     {
-        glCreateBuffers(1, &m_RendererID);
+        glGenBuffers(1, &m_RendererID);
 
-        // GL_ELEMENT_ARRAY_BUFFER is special; it's only valid if a VAO is bound (usually).
-        // But glCreateBuffers + glNamedBufferData (OpenGL 4.5+) handles state better.
-        // For compatibility with 4.1/4.2, we use standard binding.
+        // We bind to ensure the buffer is correctly initialized on the GPU state
         glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, m_RendererID);
         glBufferData(GL_ELEMENT_ARRAY_BUFFER, count * sizeof(uint32_t), indices, GL_STATIC_DRAW);
+
+        AETHER_CORE_TRACE("IndexBuffer Created: ID {0} (Count: {1})", m_RendererID, count);
     }
 
     IndexBuffer::~IndexBuffer()
     {
+        AETHER_CORE_TRACE("Deleting IndexBuffer: ID {0}", m_RendererID);
         glDeleteBuffers(1, &m_RendererID);
     }
 

@@ -1,5 +1,5 @@
 #include "SDLWindow.h"
-
+#include <glad/glad.h>
 // Required to let ImGui see SDL events
 #include "backends/imgui_impl_sdl2.h"
 #include <imgui.h> // Required to access ImGui::GetCurrentContext()
@@ -29,64 +29,38 @@ namespace aether {
         m_Data.Title = props.Title;
         m_Data.Width = props.Width;
         m_Data.Height = props.Height;
-        m_Data.VSync = props.VSync;
-        m_Data.Mode = props.Mode;
 
-        AETHER_CORE_INFO("Creating Window {0} ({1}x{2})", props.Title, props.Width, props.Height);
-
-        // 1. Initialize SDL System
-        if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_TIMER | SDL_INIT_GAMECONTROLLER) != 0) {
-            AETHER_CORE_CRITICAL("SDL_Init Failed: {0}", SDL_GetError());
+        if (SDL_Init(SDL_INIT_VIDEO) < 0) {
+            AETHER_CORE_CRITICAL("SDL could not initialize! SDL_Error: {0}", SDL_GetError());
             return;
         }
 
-        // 2. Setup Window Flags
-        SDL_WindowFlags window_flags = (SDL_WindowFlags)(SDL_WINDOW_OPENGL | SDL_WINDOW_RESIZABLE | SDL_WINDOW_ALLOW_HIGHDPI);
+        // --- Explicit Context Attributes ---
+        // Requesting a 4.5 Core Profile prevents driver-level "Compatibility" hangs
+        SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, 4);
+        SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, 5);
+        SDL_GL_SetAttribute(SDL_GL_CONTEXT_PROFILE_MASK, SDL_GL_CONTEXT_PROFILE_CORE);
 
-        if (m_Data.Mode == WindowMode::Fullscreen) {
-            window_flags = (SDL_WindowFlags)(window_flags | SDL_WINDOW_FULLSCREEN);
-        }
-        else if (m_Data.Mode == WindowMode::Borderless) {
-            window_flags = (SDL_WindowFlags)(window_flags | SDL_WINDOW_BORDERLESS);
-        }
-        else if (m_Data.Mode == WindowMode::Maximized) {
-            window_flags = (SDL_WindowFlags)(window_flags | SDL_WINDOW_MAXIMIZED);
-        }
+        SDL_GL_SetAttribute(SDL_GL_DOUBLEBUFFER, 1);
+        SDL_GL_SetAttribute(SDL_GL_DEPTH_SIZE, 24);
 
-        // 3. Create the Native Window
-        m_Window = (SDL_Window*)SDL_CreateWindow(
+        m_Window = SDL_CreateWindow(
             m_Data.Title.c_str(),
-            SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED,
-            m_Data.Width, m_Data.Height,
-            window_flags
+            SDL_WINDOWPOS_CENTERED,
+            SDL_WINDOWPOS_CENTERED,
+            (int)m_Data.Width,
+            (int)m_Data.Height,
+            SDL_WINDOW_OPENGL | SDL_WINDOW_SHOWN | SDL_WINDOW_RESIZABLE
         );
 
-        if (!m_Window) {
-            AETHER_CORE_CRITICAL("Failed to create SDL Window: {0}", SDL_GetError());
-            return; // Caller (Engine) will Assert on null window
-        }
+        m_Context = SDL_GL_CreateContext(m_Window);
+        SDL_GL_MakeCurrent(m_Window, m_Context);
 
-        // 4. Create OpenGL Context
-        m_Context = SDL_GL_CreateContext((SDL_Window*)m_Window);
+        int status = gladLoadGLLoader((GLADloadproc)SDL_GL_GetProcAddress);
+        AETHER_ASSERT(status, "Failed to initialize GLAD!");
 
-        // Critical Check: If this fails, we have no renderer.
-        if (!m_Context) {
-            AETHER_CORE_CRITICAL("Failed to create OpenGL Context: {0}", SDL_GetError());
-            return;
-        }
-
-        if (SDL_GL_MakeCurrent((SDL_Window*)m_Window, m_Context) != 0) {
-            AETHER_CORE_ERROR("Failed to make OpenGL Context current: {0}", SDL_GetError());
-        }
-
-        // Log Driver Info (Crucial for debugging specific GPU issues)
-        AETHER_CORE_INFO("OpenGL Info:");
-        AETHER_CORE_INFO("  Vendor:   {0}", (const char*)glGetString(GL_VENDOR));
-        AETHER_CORE_INFO("  Renderer: {0}", (const char*)glGetString(GL_RENDERER));
-        AETHER_CORE_INFO("  Version:  {0}", (const char*)glGetString(GL_VERSION));
-
-        // 5. Apply VSync
-        SetVsync(m_Data.VSync);
+        // Sync with vertical retrace (VSync)
+        SDL_GL_SetSwapInterval(1);
     }
 
     void SDLWindow::Shutdown() {

@@ -15,6 +15,9 @@ namespace aether {
     Engine::Engine(const EngineSpecification& engineSpec, const WindowSettings& windowSettings)
         : m_Spec(engineSpec), m_ImGuiLayer(nullptr)
     {
+		// Initialize Logging System First
+        Log::Init();
+
         // Strict Singleton Enforcement
         // If this triggers, we have a major architectural flaw in the application entry point.
         AETHER_ASSERT(!s_Instance, "Engine already exists! Do not instantiate multiple Engines.");
@@ -49,8 +52,9 @@ namespace aether {
             m_Window->SetEventCallback(std::bind(&Engine::OnEvent, this, std::placeholders::_1));
 
             // --- Initialize Renderer (Only when Window exists) ---
+            AETHER_CORE_INFO("Starting Renderer2D Initialization...");
             Renderer2D::Init();
-            AETHER_CORE_INFO("Renderer2D Initialized");
+            AETHER_CORE_INFO("Renderer2D Initialized Successfully.");
             // --------------------------------------------------------
 
             AETHER_CORE_INFO("Window Initialized: {0}x{1} (VSync: {2})",
