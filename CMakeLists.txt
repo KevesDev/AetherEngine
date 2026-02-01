@@ -5,6 +5,11 @@ set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
+# Define AETHER_DEBUG macro only for Debug builds
+if(CMAKE_BUILD_TYPE MATCHES "Debug")
+    add_compile_definitions(AETHER_DEBUG)
+endif()
+
 # --- 1. DOWNLOAD DEPENDENCIES ---
 include(FetchContent)
 

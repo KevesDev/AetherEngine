@@ -14,6 +14,7 @@ namespace aether {
         virtual ~SDLWindow();
 
         void OnUpdate() override;
+        virtual void Clear() const override;
 
         inline uint32_t GetWidth() const override { return m_Data.Width; }
         inline uint32_t GetHeight() const override { return m_Data.Height; }

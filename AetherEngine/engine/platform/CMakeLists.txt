@@ -2,6 +2,7 @@
 target_sources(aether_engine PRIVATE
     Window.cpp
     SDLWindow.cpp
+    SDLInput.cpp
 )
 
 # Force SDL includes if needed
