@@ -43,6 +43,8 @@ namespace aether {
 
         static std::shared_ptr<Project> GetActive() { return s_ActiveProject; }
 
+        const ProjectConfig& GetConfig() const { return m_Config; }
+
         // --- Core API ---
         static std::shared_ptr<Project> New();
         static std::shared_ptr<Project> Load(const std::filesystem::path& path);

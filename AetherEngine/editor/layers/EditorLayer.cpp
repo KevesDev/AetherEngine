@@ -3,16 +3,18 @@
 #include "../../engine/scene/World.h"
 #include "../../engine/core/Theme.h"
 #include "../../engine/project/Project.h"
+#include "../../engine/project/ProjectSerializer.h"
 #include "../../engine/ecs/Components.h"
 #include "../../engine/ecs/Registry.h"
 #include "../../engine/events/Event.h"
+#include "../../engine/events/ApplicationEvent.h"
 #include "../../engine/input/KeyCodes.h"
-#include "../../engine/renderer/Renderer2D.h" // Required for rendering
+#include "../../engine/renderer/Renderer2D.h"
 
 #include <imgui.h>
 #include <imgui_internal.h>
 #include <filesystem>
-#include <glad/glad.h> // Required for glClear
+#include <glad/glad.h>
 
 namespace aether {
 
@@ -34,6 +36,7 @@ namespace aether {
 
         m_IniFilePath = (settingsDir / "editor.ini").string();
         ImGui::GetIO().IniFilename = m_IniFilePath.c_str();
+        ImGui::LoadIniSettingsFromDisk(m_IniFilePath.c_str());
 
         // 3. Set Window Title
         std::string title = Project::GetActiveConfig().Name + " - Aether Editor";
@@ -41,8 +44,7 @@ namespace aether {
 
         AETHER_CORE_INFO("EditorLayer Attached. Layout File: {0}", m_IniFilePath);
 
-        // 4. RESTORED: Create Framebuffer
-        // This was missing, causing the crash in OnUpdate!
+        // 4. Create Framebuffer
         FramebufferSpecification fbSpec;
         fbSpec.Width = 1280;
         fbSpec.Height = 720;
@@ -61,10 +63,9 @@ namespace aether {
 
     void EditorLayer::OnUpdate(TimeStep ts)
     {
-        // Guard: Ensure Framebuffer exists before using it
         if (!m_Framebuffer) return;
 
-        // 1. Handle Resize
+        // 1. Resize Framebuffer
         if (FramebufferSpecification spec = m_Framebuffer->GetSpecification();
             m_ViewportSize.x > 0.0f && m_ViewportSize.y > 0.0f &&
             (spec.Width != (uint32_t)m_ViewportSize.x || spec.Height != (uint32_t)m_ViewportSize.y))
@@ -73,16 +74,17 @@ namespace aether {
             m_EditorCamera.SetViewportSize(m_ViewportSize.x, m_ViewportSize.y);
         }
 
-        // 2. Update Editor Camera
+        // 2. Update Camera
         if (m_ViewportFocused)
         {
             m_EditorCamera.OnUpdate(ts);
         }
 
-        // 3. RENDER SCENE (Off-Screen)
+        // 3. Render Scene
         m_Framebuffer->Bind();
 
-        glClearColor(0.1f, 0.1f, 0.1f, 1.0f);
+        Theme theme;
+        glClearColor(theme.WindowBg.x, theme.WindowBg.y, theme.WindowBg.z, 1.0f);
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
         Renderer2D::BeginScene(m_EditorCamera.GetViewProjection());
@@ -130,27 +132,86 @@ namespace aether {
             return;
         }
 
-        // --- 1. Panels ---
+        Theme theme;
+
+        // --- 1. Panels Context ---
         m_SceneHierarchyPanel.SetContext(world->GetScene());
         Entity selectedEntity = m_SceneHierarchyPanel.GetSelectedEntity();
         m_InspectorPanel.SetContext(selectedEntity);
 
-        // --- 2. Dockspace ---
+        // --- 2. Dockspace Setup ---
         const ImGuiViewport* viewport = ImGui::GetMainViewport();
         ImGui::SetNextWindowPos(viewport->WorkPos);
         ImGui::SetNextWindowSize(viewport->WorkSize);
         ImGui::SetNextWindowViewport(viewport->ID);
 
-        ImGuiWindowFlags window_flags = ImGuiWindowFlags_NoDocking | ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoBringToFrontOnFocus | ImGuiWindowFlags_NoNavFocus | ImGuiWindowFlags_NoBackground;
+        ImGuiWindowFlags window_flags = ImGuiWindowFlags_MenuBar | ImGuiWindowFlags_NoDocking | ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoBringToFrontOnFocus | ImGuiWindowFlags_NoNavFocus | ImGuiWindowFlags_NoBackground;
 
         ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, 0.0f);
         ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 0.0f);
         ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0.0f, 0.0f));
+
+        // Background for Menu Bar
+        ImGui::PushStyleColor(ImGuiCol_MenuBarBg, theme.PanelHover);
+
         ImGui::Begin("Aether Master DockSpace", nullptr, window_flags);
-        ImGui::PopStyleVar(3);
+
+        ImGui::PopStyleColor(); // Pop MenuBarBg
+        ImGui::PopStyleVar(3);  // Pop Window Vars
 
         ImGuiID dockspace_id = ImGui::GetID("AetherMasterDockSpace");
         ImGui::DockSpace(dockspace_id, ImVec2(0.0f, 0.0f), ImGuiDockNodeFlags_None);
+
+        // --- 3. Main Menu Bar ---
+        if (ImGui::BeginMenuBar())
+        {
+            ImGui::PushStyleColor(ImGuiCol_Text, theme.AccentPrimary);
+
+            if (ImGui::BeginMenu("File"))
+            {
+                ImGui::PushStyleColor(ImGuiCol_Text, theme.Text);
+
+                if (ImGui::MenuItem("Save Project", "Ctrl+S"))
+                {
+                    auto project = Project::GetActive();
+                    if (project) {
+                        // : Use project name for filename
+                        std::string filename = project->GetConfig().Name + ".aether";
+                        ProjectSerializer serializer(project);
+                        serializer.Serialize(project->GetProjectDirectory() / filename);
+                        AETHER_CORE_INFO("Project Saved: {0}", filename);
+                    }
+                }
+                if (ImGui::MenuItem("Exit")) {
+                    WindowCloseEvent event;
+                    Engine::Get().OnEvent(event);
+                }
+                ImGui::PopStyleColor();
+                ImGui::EndMenu();
+            }
+
+            if (ImGui::BeginMenu("View"))
+            {
+                ImGui::PushStyleColor(ImGuiCol_Text, theme.Text);
+                if (ImGui::MenuItem("Reset Layout"))
+                {
+                    EnsureLayout(dockspace_id);
+                }
+                ImGui::PopStyleColor();
+                ImGui::EndMenu();
+            }
+
+            ImGui::PopStyleColor(); // Pop AccentPrimary
+            ImGui::EndMenuBar();
+
+            // : Draw Lavender Border for visibility
+            // We draw this *after* EndMenuBar so it overlays on top
+            ImVec2 p_min = ImGui::GetWindowPos();
+            ImVec2 p_max = ImVec2(p_min.x + ImGui::GetWindowWidth(), p_min.y + ImGui::GetFrameHeight());
+
+            // Draw a 1px border rectangle using AccentPrimary
+            ImGui::GetWindowDrawList()->AddRect(p_min, p_max, ImGui::ColorConvertFloat4ToU32(theme.AccentPrimary));
+        }
 
         if (m_IsFirstFrame) {
             if (!std::filesystem::exists(m_IniFilePath)) EnsureLayout(dockspace_id);
@@ -158,11 +219,11 @@ namespace aether {
         }
         ImGui::End();
 
-        // --- 3. Render Panels ---
+        // --- 4. Render Panels ---
         m_SceneHierarchyPanel.OnImGuiRender();
         m_InspectorPanel.OnImGuiRender();
 
-        // --- 4. Render Viewport ---
+        // --- 5. Render Viewport ---
         ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0.0f, 0.0f));
         ImGui::Begin("Viewport");
 
@@ -175,15 +236,18 @@ namespace aether {
         ImVec2 viewportPanelSize = ImGui::GetContentRegionAvail();
         m_ViewportSize = { viewportPanelSize.x, viewportPanelSize.y };
 
-        // Draw Framebuffer Image
+        // Draw Framebuffer
         if (m_Framebuffer) {
             uint32_t textureID = m_Framebuffer->GetColorAttachmentRendererID();
             ImGui::Image((void*)(uintptr_t)textureID, ImVec2{ m_ViewportSize.x, m_ViewportSize.y }, ImVec2{ 0, 1 }, ImVec2{ 1, 0 });
         }
 
         // Overlay Stats
-        ImGui::SetCursorPos(ImVec2(10, 10));
-        ImGui::TextColored(ImVec4(1, 1, 1, 0.5f), "Viewport: %.0fx%.0f", m_ViewportSize.x, m_ViewportSize.y);
+        ImGui::SetCursorPos(ImVec2(20, 30));
+        ImGui::TextColored(theme.AccentPrimary, "Viewport: %.0fx%.0f", m_ViewportSize.x, m_ViewportSize.y);
+
+        ImGui::SetCursorPos(ImVec2(20, 50));
+        ImGui::TextColored(theme.TextMuted, "FPS: %.0f", ImGui::GetIO().Framerate);
 
         ImGui::End();
         ImGui::PopStyleVar();

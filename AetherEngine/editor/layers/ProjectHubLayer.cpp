@@ -103,7 +103,9 @@ namespace aether {
             ImGui::SetCursorPos(ImVec2(20, 45));
             ImGui::TextColored(ImVec4(0.6f, 0.6f, 0.6f, 1.0f), "Browse for an .aether file.");
 
-            ImGui::SetCursorPos(ImVec2(20, 80));
+			// Browse Button position
+            ImGui::SetCursorPos(ImVec2(20, 130));
+
             ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.0f, 0.7f, 0.8f, 1.0f));
             ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.0f, 0.8f, 0.9f, 1.0f));
             ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.0f, 0.0f, 0.0f, 1.0f));

@@ -21,7 +21,7 @@ namespace aether {
         void DrawEntityNode(Entity entity);
 
     private:
-        Scene* m_Context = nullptr; // FIX: Raw pointer
+        Scene* m_Context = nullptr; // : Raw pointer
         Entity m_SelectionContext;
     };
 }
