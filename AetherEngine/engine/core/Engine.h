@@ -5,6 +5,8 @@
 #include "Layers/LayerStack.h"
 #include "Layers/ImGuiLayer.h"
 #include "../scene/World.h"
+#include <vector>
+#include <functional>
 #include <string>
 #include <memory>
 
@@ -44,6 +46,7 @@ namespace aether {
 
         void PushLayer(Layer* layer);
         void PushOverlay(Layer* layer);
+        void PopLayer(Layer* layer);
 
         static Engine& Get() { return *s_Instance; }
         Window& GetWindow() { return *m_Window; }
@@ -51,7 +54,7 @@ namespace aether {
         // Getters so we can check "Am I a Server?" later
         const EngineSpecification& GetSpec() const { return m_Spec; }
 
-        // --- NEW: World Management API ---
+        // --- World Management API ---
         // The Application (Client/Editor) calls this to load a specific map/level.
         void SetWorld(std::unique_ptr<World> newWorld);
 
@@ -72,6 +75,9 @@ namespace aether {
 
         // This holds the current ECS Registry and Simulation State.
         std::unique_ptr<World> m_ActiveWorld;
-    };
 
+        // --- Operation Queue ---
+        // Stores pending layer operations to be executed safely at start of frame
+        std::vector<std::function<void()>> m_LayerOperations;
+    };
 }

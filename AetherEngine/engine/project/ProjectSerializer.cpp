@@ -1,15 +1,15 @@
 #include "ProjectSerializer.h"
 #include "../core/Log.h"
 #include "../vendor/json.hpp"
+#include "../core/EngineVersion.h"
+#include "Project.h" 
 #include <fstream>
 #include <sstream>
 
 using json = nlohmann::json;
 
 namespace aether {
-    /* This implements the JSON parsing. 
-    *  It uses strict nlohmann::json lookups to ensure the file is valid.
-    */
+
     ProjectSerializer::ProjectSerializer(std::shared_ptr<Project> project)
         : m_Project(project)
     {
@@ -17,14 +17,21 @@ namespace aether {
 
     bool ProjectSerializer::Serialize(const std::filesystem::path& filepath)
     {
-        const auto& config = m_Project->GetActiveConfig();
+        // Access member directly (Friend Access)
+        const auto& config = m_Project->m_Config;
+
+        if (!Project::IsValidName(config.Name)) {
+            AETHER_CORE_ERROR("ProjectSerializer: Cannot save project with invalid name: '{0}'", config.Name);
+            return false;
+        }
 
         json out;
         out["Project"] = {
             { "Name", config.Name },
             { "StartScene", config.StartScene },
             { "AssetDirectory", config.AssetDirectory.string() },
-            { "ScriptModulePath", config.ScriptModulePath.string() }
+            { "ScriptModulePath", config.ScriptModulePath.string() },
+            { "EngineVersion", EngineVersion::ToString() } // Write Version
         };
 
         std::ofstream fout(filepath);
@@ -52,7 +59,16 @@ namespace aether {
         try {
             json data = json::parse(strStream.str());
             auto& projectData = data["Project"];
-            auto& config = m_Project->GetActiveConfig();
+
+            // Version Check
+            std::string projVersion = projectData.value("EngineVersion", "");
+            if (projVersion != EngineVersion::ToString()) {
+                AETHER_CORE_ERROR("Project Load Failed: Version Mismatch. Project: '{0}', Engine: '{1}'", projVersion, EngineVersion::ToString());
+                return false;
+            }
+
+            // Access member directly (Friend Access)
+            auto& config = m_Project->m_Config;
 
             config.Name = projectData.value("Name", "Untitled");
             config.StartScene = projectData.value("StartScene", "");
@@ -65,5 +81,23 @@ namespace aether {
         }
 
         return true;
+    }
+
+    // Helper for UI to peek at version
+    bool ProjectSerializer::GetProjectVersion(const std::filesystem::path& filepath, std::string& outVersion)
+    {
+        std::ifstream stream(filepath);
+        if (!stream) return false;
+
+        try {
+            json data = json::parse(stream);
+            if (data.contains("Project") && data["Project"].contains("EngineVersion")) {
+                outVersion = data["Project"]["EngineVersion"];
+                return true;
+            }
+        }
+        catch (...) { return false; }
+
+        return false;
     }
 }

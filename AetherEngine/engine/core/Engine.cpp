@@ -52,14 +52,35 @@ namespace aether {
         s_Instance = nullptr;
     }
 
-    void Engine::PushLayer(Layer* layer) { m_LayerStack.PushLayer(layer); }
+    void Engine::PushLayer(Layer* layer)
+    {
+        // Queue the operation
+        m_LayerOperations.emplace_back([this, layer]() {
+            m_LayerStack.PushLayer(layer);
+            });
+    }
 
     void Engine::PushOverlay(Layer* layer)
     {
-        m_LayerStack.PushOverlay(layer);
-        if (layer->GetName() == "ImGuiLayer") {
-            m_ImGuiLayer = static_cast<ImGuiLayer*>(layer);
-        }
+        // Queue the operation
+        m_LayerOperations.emplace_back([this, layer]() {
+            m_LayerStack.PushOverlay(layer);
+            if (layer->GetName() == "ImGuiLayer") {
+                m_ImGuiLayer = static_cast<ImGuiLayer*>(layer);
+            }
+            });
+    }
+
+    /* Note: LayerStack::PopLayer essentially just removes the pointer from the list. 
+    It does not delete the memory, which is correct because layers are often raw pointers 
+    in this architecture).
+    */
+    void Engine::PopLayer(Layer* layer)
+    {
+        // Queue the operation
+        m_LayerOperations.emplace_back([this, layer]() {
+            m_LayerStack.PopLayer(layer);
+            });
     }
 
     void Engine::OnEvent(Event& e)
@@ -94,6 +115,15 @@ namespace aether {
         static bool s_WarnedNoCamera = false;
 
         while (m_Running) {
+            // --- PROCESS LAYER QUEUE ---
+            // We execute all pending Push/Pop requests here, outside the loop.
+            // This prevents iterator invalidation crashes.
+            for (auto& op : m_LayerOperations) {
+                op();
+            }
+            m_LayerOperations.clear();
+            // --------------------------------
+
             AetherTime::Update();
             TimeStep timestep = AetherTime::DeltaTime();
 

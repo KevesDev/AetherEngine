@@ -1,8 +1,0 @@
-{
-  "Window": {
-    "Title": "Aether Game Client",
-    "Width": 1280,
-    "Height": 720
-  },
-  "StartupScene": "Level1.json"
-}

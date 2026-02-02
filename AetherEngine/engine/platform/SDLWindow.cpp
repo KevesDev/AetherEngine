@@ -77,6 +77,11 @@ namespace aether {
     }
     // ---------------------------------------
 
+    void SDLWindow::SetTitle(const std::string& title) {
+        m_Data.Title = title;
+        SDL_SetWindowTitle(m_Window, title.c_str());
+    }
+
     void SDLWindow::OnUpdate() {
         SDL_Event event;
 

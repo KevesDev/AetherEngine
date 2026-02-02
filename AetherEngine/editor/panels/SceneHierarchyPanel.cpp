@@ -1,10 +1,16 @@
 #include "SceneHierarchyPanel.h"
 #include <imgui.h>
+#include <imgui_internal.h>
 #include "../../engine/ecs/Components.h"
 
 namespace aether {
 
-    void SceneHierarchyPanel::SetContext(const std::shared_ptr<Scene>& scene)
+    SceneHierarchyPanel::SceneHierarchyPanel(Scene* scene)
+    {
+        SetContext(scene);
+    }
+
+    void SceneHierarchyPanel::SetContext(Scene* scene)
     {
         m_Context = scene;
         m_SelectionContext = {};
@@ -12,11 +18,21 @@ namespace aether {
 
     void SceneHierarchyPanel::OnImGuiRender()
     {
+        // --- SCENE HIERARCHY ---
         ImGui::Begin("Scene Hierarchy");
 
         if (m_Context)
         {
             auto& registry = m_Context->GetRegistry();
+
+            // Right-click on blank space to create entity
+            if (ImGui::BeginPopupContextWindow(nullptr, ImGuiPopupFlags_MouseButtonRight | ImGuiPopupFlags_NoOpenOverItems))
+            {
+                if (ImGui::MenuItem("Create Empty Entity"))
+                    m_Context->CreateEntity("Empty Entity");
+
+                ImGui::EndPopup();
+            }
 
             auto& tags = registry.View<TagComponent>();
             auto& ownerMap = registry.GetOwnerMap<TagComponent>();
@@ -25,22 +41,36 @@ namespace aether {
             {
                 EntityID id = ownerMap.at(i);
 
-                // Use 'auto*' or 'RelationshipComponent*' because GetComponent returns a pointer
+                // Skip children, they are drawn recursively by their parent
                 if (registry.HasComponent<RelationshipComponent>(id)) {
+                    // Raw pointer access for speed here is fine
                     auto* relationship = registry.GetComponent<RelationshipComponent>(id);
-                    if (relationship->Parent != NULL_ENTITY)
-                        continue; // Skip children, they will be drawn by their parent
+                    if (relationship && relationship->Parent != NULL_ENTITY)
+                        continue;
                 }
 
                 Entity entity{ id, &registry };
                 DrawEntityNode(entity);
             }
 
+            // Click empty space to deselect
             if (ImGui::IsMouseDown(0) && ImGui::IsWindowHovered())
                 m_SelectionContext = {};
         }
 
-        ImGui::End();
+        ImGui::End(); // End Hierarchy
+
+        // --- INSPECTOR ---
+        ImGui::Begin("Inspector");
+        if (m_SelectionContext)
+        {
+            DrawComponents(m_SelectionContext);
+        }
+        else
+        {
+            ImGui::Text("No entity selected.");
+        }
+        ImGui::End(); // End Inspector
     }
 
     void SceneHierarchyPanel::DrawEntityNode(Entity entity)
@@ -52,8 +82,6 @@ namespace aether {
 
         bool hasChildren = false;
         if (entity.HasComponent<RelationshipComponent>()) {
-            // Entity::GetComponent calls Registry::GetComponent, checks for null, and returns *component (Ref).
-            // So here we use dot (.) syntax.
             if (entity.GetComponent<RelationshipComponent>().ChildrenCount > 0) {
                 hasChildren = true;
             }
@@ -70,9 +98,18 @@ namespace aether {
             m_SelectionContext = entity;
         }
 
+        // Context Menu (Right-click entity)
+        bool entityDeleted = false;
+        if (ImGui::BeginPopupContextItem())
+        {
+            if (ImGui::MenuItem("Delete Entity"))
+                entityDeleted = true;
+
+            ImGui::EndPopup();
+        }
+
         if (opened && hasChildren)
         {
-            // Use reference here since Entity::GetComponent returns T&
             auto& relation = entity.GetComponent<RelationshipComponent>();
             EntityID currentChildID = relation.FirstChild;
 
@@ -82,7 +119,6 @@ namespace aether {
                 DrawEntityNode(childEntity);
 
                 if (childEntity.HasComponent<RelationshipComponent>()) {
-                    // Entity::GetComponent returns T&
                     currentChildID = childEntity.GetComponent<RelationshipComponent>().NextSibling;
                 }
                 else {
@@ -91,6 +127,94 @@ namespace aether {
             }
 
             ImGui::TreePop();
+        }
+
+        if (entityDeleted)
+        {
+            if (m_Context) {
+                m_Context->DestroyEntity(entity);
+                if (m_SelectionContext == entity)
+                    m_SelectionContext = {};
+            }
+        }
+    }
+
+    void SceneHierarchyPanel::DrawComponents(Entity entity)
+    {
+        // Tag (Name)
+        if (entity.HasComponent<TagComponent>())
+        {
+            auto& tag = entity.GetComponent<TagComponent>().Tag;
+            char buffer[256];
+            memset(buffer, 0, sizeof(buffer));
+            strcpy_s(buffer, sizeof(buffer), tag.c_str());
+            if (ImGui::InputText("##Tag", buffer, sizeof(buffer)))
+            {
+                tag = std::string(buffer);
+            }
+        }
+
+        ImGui::SameLine();
+        ImGui::PushItemWidth(-1);
+
+        if (ImGui::Button("Add Component"))
+            ImGui::OpenPopup("AddComponent");
+
+        if (ImGui::BeginPopup("AddComponent"))
+        {
+            if (!entity.HasComponent<CameraComponent>()) {
+                if (ImGui::MenuItem("Camera")) {
+                    entity.AddComponent<CameraComponent>();
+                    ImGui::CloseCurrentPopup();
+                }
+            }
+            if (!entity.HasComponent<SpriteComponent>()) {
+                if (ImGui::MenuItem("Sprite")) {
+                    entity.AddComponent<SpriteComponent>();
+                    ImGui::CloseCurrentPopup();
+                }
+            }
+            ImGui::EndPopup();
+        }
+        ImGui::PopItemWidth();
+
+        ImGui::Separator();
+
+        // Transform
+        if (entity.HasComponent<TransformComponent>())
+        {
+            if (ImGui::CollapsingHeader("Transform", ImGuiTreeNodeFlags_DefaultOpen))
+            {
+                auto& tc = entity.GetComponent<TransformComponent>();
+                ImGui::DragFloat("X", &tc.X, 0.1f);
+                ImGui::DragFloat("Y", &tc.Y, 0.1f);
+                ImGui::DragFloat("Scale X", &tc.ScaleX, 0.1f);
+                ImGui::DragFloat("Scale Y", &tc.ScaleY, 0.1f);
+                ImGui::DragFloat("Rotation", &tc.Rotation, 0.1f);
+            }
+        }
+
+        // Camera
+        if (entity.HasComponent<CameraComponent>())
+        {
+            if (ImGui::CollapsingHeader("Camera", ImGuiTreeNodeFlags_DefaultOpen))
+            {
+                auto& cc = entity.GetComponent<CameraComponent>();
+                ImGui::Checkbox("Primary", &cc.Primary);
+                ImGui::DragFloat("Size", &cc.Size, 0.1f);
+                ImGui::DragFloat("Near", &cc.Near);
+                ImGui::DragFloat("Far", &cc.Far);
+            }
+        }
+
+        // Sprite
+        if (entity.HasComponent<SpriteComponent>())
+        {
+            if (ImGui::CollapsingHeader("Sprite", ImGuiTreeNodeFlags_DefaultOpen))
+            {
+                auto& src = entity.GetComponent<SpriteComponent>();
+                ImGui::ColorEdit4("Color", &src.R);
+            }
         }
     }
 }

@@ -9,9 +9,10 @@ namespace aether {
     {
     public:
         SceneHierarchyPanel() = default;
+        SceneHierarchyPanel(Scene* scene); // Raw pointer constructor
 
         // We set the context (Which scene are we looking at?)
-        void SetContext(const std::shared_ptr<Scene>& scene);
+        void SetContext(Scene* scene); // Raw pointer setter
 
         virtual void OnImGuiRender() override;
 
@@ -22,7 +23,10 @@ namespace aether {
         // Recursive draw function for the Scene Graph
         void DrawEntityNode(Entity entity);
 
-        std::shared_ptr<Scene> m_Context;
+        // Inspector UI: Draws components for the selected entity
+        void DrawComponents(Entity entity);
+
+        Scene* m_Context = nullptr; // Raw pointer
         Entity m_SelectionContext;
     };
 

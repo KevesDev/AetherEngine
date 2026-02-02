@@ -1,9 +1,16 @@
-﻿add_executable(aether_editor main.cpp "layers/EditorLayer.h" "layers/EditorLayer.cpp" "panels/EditorPanel.h" "panels/SceneHierarchyPanel.cpp")
+﻿add_executable(aether_editor main.cpp "layers/EditorLayer.h" "layers/EditorLayer.cpp" "panels/EditorPanel.h" "panels/SceneHierarchyPanel.cpp" "layers/ProjectHubLayer.h" "layers/ProjectHubLayer.cpp")
 target_link_libraries(aether_editor PRIVATE aether_engine)
 
-# AUTOMATED FIX: Copy SDL2.dll to the editor folder
+# DO NOT CHANGE: Copy SDL2.dll to the editor folder
 add_custom_command(TARGET aether_editor POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E copy_if_different
     $<TARGET_FILE:SDL2>
     $<TARGET_FILE_DIR:aether_editor>
+)
+
+# Copy Engine Content (Private Internal Data)
+add_custom_command(TARGET aether_editor POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E copy_directory
+    ${CMAKE_SOURCE_DIR}/AetherEngine/EngineContent
+    $<TARGET_FILE_DIR:aether_editor>/EngineContent
 )
