@@ -1,0 +1,33 @@
+#pragma once
+#include <cstdint>
+#include <memory>
+#include <vector>
+
+namespace aether {
+
+    struct FramebufferSpecification
+    {
+        uint32_t Width = 0;
+        uint32_t Height = 0;
+        uint32_t Samples = 1;
+        bool SwapChainTarget = false; // False = Off-screen rendering (Standard FBO)
+    };
+
+    class Framebuffer
+    {
+    public:
+        virtual ~Framebuffer() = default;
+
+        virtual void Bind() = 0;
+        virtual void Unbind() = 0;
+
+        virtual void Resize(uint32_t width, uint32_t height) = 0;
+
+        virtual uint32_t GetColorAttachmentRendererID() const = 0;
+        virtual const FramebufferSpecification& GetSpecification() const = 0;
+
+        // Factory Method to create platform-specific instance
+        static std::shared_ptr<Framebuffer> Create(const FramebufferSpecification& spec);
+    };
+
+}

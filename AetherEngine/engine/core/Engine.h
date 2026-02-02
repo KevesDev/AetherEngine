@@ -18,13 +18,11 @@ namespace aether {
         Editor
     };
 
-	// Immutable engine specification
     struct EngineSpecification {
         std::string Name = "Aether Engine";
         ApplicationType Type = ApplicationType::Client;
     };
 
-	// User-configurable window settings
     struct WindowSettings {
         std::string Title = "Aether Application";
         uint32_t Width = 1280;
@@ -37,13 +35,13 @@ namespace aether {
     class Engine
     {
     public:
-		// Constructor - Takes EngineSpecification and optional WindowSettings
         Engine(const EngineSpecification& engineSpec, const WindowSettings& windowSettings = WindowSettings());
         virtual ~Engine();
 
         void Run();
         void OnEvent(Event& e);
 
+        // API queues operations to be executed safely at the start of the frame
         void PushLayer(Layer* layer);
         void PushOverlay(Layer* layer);
         void PopLayer(Layer* layer);
@@ -51,18 +49,15 @@ namespace aether {
         static Engine& Get() { return *s_Instance; }
         Window& GetWindow() { return *m_Window; }
 
-        // Getters so we can check "Am I a Server?" later
+        ImGuiLayer* GetImGuiLayer() { return m_ImGuiLayer; }
+        void SetImGuiLayer(ImGuiLayer* layer) { m_ImGuiLayer = layer; }
+
         const EngineSpecification& GetSpec() const { return m_Spec; }
 
-        // --- World Management API ---
-        // The Application (Client/Editor) calls this to load a specific map/level.
         void SetWorld(std::unique_ptr<World> newWorld);
-
-        // Returns null if no world is loaded (e.g., during startup or main menu)
         World* GetWorld() { return m_ActiveWorld.get(); }
 
     private:
-        // Handles specific events (e.g., clicking X to close)
         bool OnWindowClose(WindowCloseEvent& e);
 
         std::unique_ptr<Window> m_Window;
@@ -73,11 +68,9 @@ namespace aether {
         static Engine* s_Instance;
         ImGuiLayer* m_ImGuiLayer;
 
-        // This holds the current ECS Registry and Simulation State.
         std::unique_ptr<World> m_ActiveWorld;
 
-        // --- Operation Queue ---
-        // Stores pending layer operations to be executed safely at start of frame
+        // DO NOT CHANGE: Command Queue for safe layer operations
         std::vector<std::function<void()>> m_LayerOperations;
     };
 }

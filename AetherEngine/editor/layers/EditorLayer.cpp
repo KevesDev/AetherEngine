@@ -2,10 +2,17 @@
 #include "../../engine/core/Engine.h" 
 #include "../../engine/scene/World.h"
 #include "../../engine/core/Theme.h"
-#include "../../engine/ecs/Components.h"
 #include "../../engine/project/Project.h"
+#include "../../engine/ecs/Components.h"
+#include "../../engine/ecs/Registry.h"
+#include "../../engine/events/Event.h"
+#include "../../engine/input/KeyCodes.h"
+#include "../../engine/renderer/Renderer2D.h" // Required for rendering
+
 #include <imgui.h>
 #include <imgui_internal.h>
+#include <filesystem>
+#include <glad/glad.h> // Required for glClear
 
 namespace aether {
 
@@ -15,41 +22,120 @@ namespace aether {
     {
         AETHER_ASSERT(ImGui::GetCurrentContext(), "EditorLayer attached but ImGui Context is missing!");
 
-        // 1. Apply Theme (Production Style)
+        // 1. Apply Theme
         Theme theme;
         ThemeManager::ApplyTheme(theme);
 
-        // 2. Disable ImGui's native INI file (We use JSON serialization)
-        ImGui::GetIO().IniFilename = nullptr;
+        // 2. Setup Persistent Layout
+        auto settingsDir = Project::GetSettingsDirectory();
+        if (!std::filesystem::exists(settingsDir)) {
+            std::filesystem::create_directories(settingsDir);
+        }
 
+        m_IniFilePath = (settingsDir / "editor.ini").string();
+        ImGui::GetIO().IniFilename = m_IniFilePath.c_str();
+
+        // 3. Set Window Title
         std::string title = Project::GetActiveConfig().Name + " - Aether Editor";
         Engine::Get().GetWindow().SetTitle(title);
 
-        AETHER_CORE_INFO("EditorLayer Attached.");
+        AETHER_CORE_INFO("EditorLayer Attached. Layout File: {0}", m_IniFilePath);
+
+        // 4. RESTORED: Create Framebuffer
+        // This was missing, causing the crash in OnUpdate!
+        FramebufferSpecification fbSpec;
+        fbSpec.Width = 1280;
+        fbSpec.Height = 720;
+        m_Framebuffer = Framebuffer::Create(fbSpec);
+
+        AETHER_CORE_INFO("Framebuffer Initialized successfully.");
     }
 
     void EditorLayer::OnDetach()
     {
+        if (ImGui::GetCurrentContext()) {
+            ImGui::SaveIniSettingsToDisk(ImGui::GetIO().IniFilename);
+        }
         AETHER_CORE_INFO("EditorLayer Detached.");
+    }
+
+    void EditorLayer::OnUpdate(TimeStep ts)
+    {
+        // Guard: Ensure Framebuffer exists before using it
+        if (!m_Framebuffer) return;
+
+        // 1. Handle Resize
+        if (FramebufferSpecification spec = m_Framebuffer->GetSpecification();
+            m_ViewportSize.x > 0.0f && m_ViewportSize.y > 0.0f &&
+            (spec.Width != (uint32_t)m_ViewportSize.x || spec.Height != (uint32_t)m_ViewportSize.y))
+        {
+            m_Framebuffer->Resize((uint32_t)m_ViewportSize.x, (uint32_t)m_ViewportSize.y);
+            m_EditorCamera.SetViewportSize(m_ViewportSize.x, m_ViewportSize.y);
+        }
+
+        // 2. Update Editor Camera
+        if (m_ViewportFocused)
+        {
+            m_EditorCamera.OnUpdate(ts);
+        }
+
+        // 3. RENDER SCENE (Off-Screen)
+        m_Framebuffer->Bind();
+
+        glClearColor(0.1f, 0.1f, 0.1f, 1.0f);
+        glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+
+        Renderer2D::BeginScene(m_EditorCamera.GetViewProjection());
+
+        World* world = Engine::Get().GetWorld();
+        if (world) {
+            auto& registry = world->GetRegistry();
+            auto& view = registry.View<TransformComponent>();
+            auto& ownerMap = registry.GetOwnerMap<TransformComponent>();
+
+            for (size_t i = 0; i < view.size(); i++) {
+                EntityID id = ownerMap.at(i);
+                if (registry.HasComponent<SpriteComponent>(id)) {
+                    auto& transform = view[i];
+                    auto* sprite = registry.GetComponent<SpriteComponent>(id);
+
+                    Renderer2D::DrawQuad(
+                        { transform.X, transform.Y },
+                        { transform.ScaleX, transform.ScaleY },
+                        { sprite->R, sprite->G, sprite->B, sprite->A }
+                    );
+                }
+            }
+        }
+
+        Renderer2D::EndScene();
+        m_Framebuffer->Unbind();
+    }
+
+    void EditorLayer::OnEvent(Event& e)
+    {
+        if (m_ViewportHovered)
+        {
+            m_EditorCamera.OnEvent(e);
+        }
     }
 
     void EditorLayer::OnImGuiRender()
     {
         World* world = Engine::Get().GetWorld();
-
         if (!world) {
-            ImGui::Begin("Aether Editor");
-            ImGui::TextColored(ImVec4(1, 0, 0, 1), "CRITICAL: No World Loaded!");
+            ImGui::Begin("Aether Editor Error");
+            ImGui::Text("Loading...");
             ImGui::End();
             return;
         }
 
-        // --- SYNC PANEL CONTEXT ---
-        // We pass the raw Scene pointer to the panel every frame.
-        // This ensures if we load a new project, the UI updates instantly.
+        // --- 1. Panels ---
         m_SceneHierarchyPanel.SetContext(world->GetScene());
+        Entity selectedEntity = m_SceneHierarchyPanel.GetSelectedEntity();
+        m_InspectorPanel.SetContext(selectedEntity);
 
-        // --- DOCKSPACE SETUP ---
+        // --- 2. Dockspace ---
         const ImGuiViewport* viewport = ImGui::GetMainViewport();
         ImGui::SetNextWindowPos(viewport->WorkPos);
         ImGui::SetNextWindowSize(viewport->WorkSize);
@@ -60,7 +146,6 @@ namespace aether {
         ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, 0.0f);
         ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 0.0f);
         ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0.0f, 0.0f));
-
         ImGui::Begin("Aether Master DockSpace", nullptr, window_flags);
         ImGui::PopStyleVar(3);
 
@@ -68,77 +153,56 @@ namespace aether {
         ImGui::DockSpace(dockspace_id, ImVec2(0.0f, 0.0f), ImGuiDockNodeFlags_None);
 
         if (m_IsFirstFrame) {
-            EnsureLayout(dockspace_id);
+            if (!std::filesystem::exists(m_IniFilePath)) EnsureLayout(dockspace_id);
             m_IsFirstFrame = false;
         }
         ImGui::End();
 
-        // --- RENDER PANELS ---
-        // This draws the "Scene Hierarchy" and "Inspector" windows
+        // --- 3. Render Panels ---
         m_SceneHierarchyPanel.OnImGuiRender();
+        m_InspectorPanel.OnImGuiRender();
 
-        // --- VIEWPORT (Visual Representation) ---
+        // --- 4. Render Viewport ---
         ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0.0f, 0.0f));
         ImGui::Begin("Viewport");
 
-        ImVec2 viewportSize = ImGui::GetContentRegionAvail();
-        ImVec2 viewportPos = ImGui::GetCursorScreenPos();
-        float centerX = viewportPos.x + (viewportSize.x * 0.5f);
-        float centerY = viewportPos.y + (viewportSize.y * 0.5f);
+        // Guards
+        m_ViewportFocused = ImGui::IsWindowFocused();
+        m_ViewportHovered = ImGui::IsWindowHovered();
+        Engine::Get().GetImGuiLayer()->SetBlockEvents(!m_ViewportFocused && !m_ViewportHovered);
 
-        ImDrawList* drawList = ImGui::GetWindowDrawList();
+        // Resize Hook
+        ImVec2 viewportPanelSize = ImGui::GetContentRegionAvail();
+        m_ViewportSize = { viewportPanelSize.x, viewportPanelSize.y };
 
-        Scene* scene = world->GetScene();
-        Registry& registry = scene->GetRegistry();
-
-        auto& transforms = registry.View<TransformComponent>();
-        auto& ownerMap = registry.GetOwnerMap<TransformComponent>();
-
-        for (size_t i = 0; i < transforms.size(); i++)
-        {
-            EntityID entityID = ownerMap.at(i);
-            auto* sprite = registry.GetComponent<SpriteComponent>(entityID);
-
-            if (sprite)
-            {
-                auto& t = transforms[i];
-                float screenX = centerX + t.X;
-                float screenY = centerY + t.Y;
-
-                drawList->AddRectFilled(
-                    ImVec2(screenX - (t.ScaleX * 0.5f), screenY - (t.ScaleY * 0.5f)),
-                    ImVec2(screenX + (t.ScaleX * 0.5f), screenY + (t.ScaleY * 0.5f)),
-                    IM_COL32(sprite->R * 255, sprite->G * 255, sprite->B * 255, sprite->A * 255)
-                );
-            }
+        // Draw Framebuffer Image
+        if (m_Framebuffer) {
+            uint32_t textureID = m_Framebuffer->GetColorAttachmentRendererID();
+            ImGui::Image((void*)(uintptr_t)textureID, ImVec2{ m_ViewportSize.x, m_ViewportSize.y }, ImVec2{ 0, 1 }, ImVec2{ 1, 0 });
         }
+
+        // Overlay Stats
+        ImGui::SetCursorPos(ImVec2(10, 10));
+        ImGui::TextColored(ImVec4(1, 1, 1, 0.5f), "Viewport: %.0fx%.0f", m_ViewportSize.x, m_ViewportSize.y);
 
         ImGui::End();
         ImGui::PopStyleVar();
     }
 
-    void EditorLayer::EnsureLayout(ImGuiID dockspace_id)
+    void EditorLayer::EnsureLayout(unsigned int dockspace_id)
     {
-        if (ImGui::DockBuilderGetNode(dockspace_id) == nullptr)
-        {
-            ImGui::DockBuilderRemoveNode(dockspace_id);
-            ImGui::DockBuilderAddNode(dockspace_id, ImGuiDockNodeFlags_DockSpace);
-            ImGui::DockBuilderSetNodeSize(dockspace_id, ImGui::GetMainViewport()->Size);
+        ImGui::DockBuilderRemoveNode(dockspace_id);
+        ImGui::DockBuilderAddNode(dockspace_id, ImGuiDockNodeFlags_DockSpace | ImGuiDockNodeFlags_PassthruCentralNode);
+        ImGui::DockBuilderSetNodeSize(dockspace_id, ImGui::GetMainViewport()->Size);
 
-            ImGuiID dock_main_id = dockspace_id;
+        ImGuiID dock_main_id = dockspace_id;
+        ImGuiID dock_right_id = ImGui::DockBuilderSplitNode(dock_main_id, ImGuiDir_Right, 0.25f, nullptr, &dock_main_id);
+        ImGuiID dock_left_id = ImGui::DockBuilderSplitNode(dock_main_id, ImGuiDir_Left, 0.20f, nullptr, &dock_main_id);
 
-            // Split Right (25%) for Inspector
-            ImGuiID dock_right_id = ImGui::DockBuilderSplitNode(dock_main_id, ImGuiDir_Right, 0.25f, nullptr, &dock_main_id);
+        ImGui::DockBuilderDockWindow("Viewport", dock_main_id);
+        ImGui::DockBuilderDockWindow("Inspector", dock_right_id);
+        ImGui::DockBuilderDockWindow("Scene Hierarchy", dock_left_id);
 
-            // Split Left (20%) of the remaining main area for Hierarchy
-            ImGuiID dock_left_id = ImGui::DockBuilderSplitNode(dock_main_id, ImGuiDir_Left, 0.20f, nullptr, &dock_main_id);
-
-            // Dock the windows by name
-            ImGui::DockBuilderDockWindow("Viewport", dock_main_id);
-            ImGui::DockBuilderDockWindow("Inspector", dock_right_id);       // Matches SceneHierarchyPanel.cpp
-            ImGui::DockBuilderDockWindow("Scene Hierarchy", dock_left_id);  // Matches SceneHierarchyPanel.cpp
-
-            ImGui::DockBuilderFinish(dockspace_id);
-        }
+        ImGui::DockBuilderFinish(dockspace_id);
     }
 }

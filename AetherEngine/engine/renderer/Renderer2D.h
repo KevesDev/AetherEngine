@@ -19,6 +19,8 @@ namespace aether {
         // size: how big is it?
         // color: what color is it? (R, G, B, A)
         static void DrawQuad(const glm::vec2& position, const glm::vec2& size, const glm::vec4& color);
+
+        static void OnWindowResize(uint32_t width, uint32_t height);
     };
 
 }

@@ -1,8 +1,8 @@
 #include "Config.h"
 #include "Log.h"
 #include "VFS.h"
+#include "ConfigValidator.h"
 #include "../vendor/json.hpp"
-
 #include <fstream>
 #include <sstream>
 #include <filesystem>
@@ -15,83 +15,79 @@ namespace aether {
     {
         std::string content;
 
-        // 1. Try VFS First (Standard path)
+        // 1. Try VFS (Virtual File System)
         if (filepath.find("/") == 0 || filepath.find("\\") == 0) {
             content = VFS::ReadText(filepath);
         }
 
-        // 2. Fallback: Try Physical Path (For ProjectSettings which isn't mounted to VFS)
-        if (content.empty()) {
-            if (std::filesystem::exists(filepath)) {
-                std::ifstream stream(filepath);
-                std::stringstream strStream;
-                strStream << stream.rdbuf();
-                content = strStream.str();
-            }
+        // 2. Try Physical Filesystem
+        if (content.empty() && std::filesystem::exists(filepath)) {
+            std::ifstream stream(filepath);
+            std::stringstream strStream;
+            strStream << stream.rdbuf();
+            content = strStream.str();
         }
 
-        // 3. If still empty, fail gracefully so defaults are used
+        // --- SAFETY FALLBACK 1: File Missing ---
         if (content.empty()) {
-            Log::Write(LogLevel::Warning, "Config: " + filepath + " not found. Using Engine Defaults."); 
-            // WindowSettings (WindowProps) defaults to 1280x720 + Maximized in the constructor.
-            // We just ensure the title is correct.
+            Log::Write(LogLevel::Warning, "Config: '" + filepath + "' not found. Using Safe Defaults.");
             outSettings.Title = "Aether Engine";
+            outSettings.Width = 1280;
+            outSettings.Height = 720;
+            outSettings.Mode = WindowMode::Maximized;
             outStartupScene = "";
             return false;
         }
 
         try {
-            json bootJson = json::parse(content);
+            json configJson = json::parse(content);
 
-            if (bootJson.contains("Window")) {
-                auto& win = bootJson["Window"];
+            if (configJson.contains("Window")) {
+                auto& win = configJson["Window"];
                 outSettings.Title = win.value("Title", "Aether Engine");
                 outSettings.Width = win.value("Width", 1280);
                 outSettings.Height = win.value("Height", 720);
                 outSettings.VSync = win.value("VSync", true);
 
-                // Load the WindowMode Enum (Cast from int)
                 int modeInt = win.value("Mode", (int)WindowMode::Maximized);
                 outSettings.Mode = static_cast<WindowMode>(modeInt);
             }
 
-            outStartupScene = bootJson.value("StartupScene", "");
+            outStartupScene = configJson.value("StartupScene", "");
 
-            Log::Write(LogLevel::Info, "Config: Loaded boot settings from " + filepath);
+            // --- SAFETY FALLBACK 2: Validate Data ---
+            // This prevents "0x0" crashes or invalid window states
+            ConfigValidator::ValidateWindowSettings(outSettings);
+
+            Log::Write(LogLevel::Info, "Config: Loaded and Validated settings from " + filepath);
             return true;
         }
         catch (json::exception& e) {
-            Log::Write(LogLevel::Error, "Config: JSON Parsing Error: " + std::string(e.what()));
+            Log::Write(LogLevel::Error, "Config: JSON Parsing Error: " + std::string(e.what()) + ". Reverting to defaults.");
+
+            // Reset to safe defaults if JSON is corrupt
+            outSettings.Width = 1280;
+            outSettings.Height = 720;
+            outSettings.Mode = WindowMode::Maximized;
             return false;
         }
     }
 
     void Config::SaveBootConfig(const std::string& filepath, const WindowSettings& settings, const std::string& startupScene)
     {
-        json bootJson;
-        bootJson["Window"]["Title"] = settings.Title;
-        bootJson["Window"]["Width"] = settings.Width;
-        bootJson["Window"]["Height"] = settings.Height;
-        bootJson["Window"]["VSync"] = settings.VSync;
+        json configJson;
+        configJson["Window"]["Title"] = settings.Title;
+        configJson["Window"]["Width"] = settings.Width;
+        configJson["Window"]["Height"] = settings.Height;
+        configJson["Window"]["VSync"] = settings.VSync;
+        configJson["Window"]["Mode"] = (int)settings.Mode;
+        configJson["StartupScene"] = startupScene;
 
-        // Save the WindowMode Enum
-        bootJson["Window"]["Mode"] = (int)settings.Mode;
+        std::string dump = configJson.dump(4);
+        std::ofstream out(filepath);
+        out << dump;
+        out.close();
 
-        bootJson["StartupScene"] = startupScene;
-
-        std::string dump = bootJson.dump(4);
-
-        // Try VFS Write first
-        if (filepath.find("/") == 0 || filepath.find("\\") == 0) {
-            VFS::WriteText(filepath, dump);
-        }
-        else {
-            // Fallback to Physical Write
-            std::ofstream out(filepath);
-            out << dump;
-            out.close();
-        }
-
-        Log::Write(LogLevel::Info, "Config: Saved boot settings to " + filepath);
+        Log::Write(LogLevel::Info, "Config: Saved settings to " + filepath);
     }
 }

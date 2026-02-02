@@ -14,21 +14,16 @@
 
 int main(int argc, char* argv[])
 {
-    // 1. Initialize Logging First
     aether::Log::Init();
 
-    // --- GLOBAL SAFETY NET START ---
     try {
-        // 2. Mount Internal Content (Needed for Shaders)
         if (std::filesystem::exists("EngineContent")) {
             aether::VFS::Mount("/engine", "EngineContent");
         }
         else {
             AETHER_CORE_CRITICAL("CRITICAL MISSING DATA: 'EngineContent' folder not found. Working Dir: {}", std::filesystem::current_path().string());
-            // We don't return -1 here yet to let the logger flush, but this is fatal.
         }
 
-        // 3. Parse Args
         std::filesystem::path projectPath;
         bool openHub = true;
 
@@ -39,7 +34,6 @@ int main(int argc, char* argv[])
             }
         }
 
-        // 4. Setup Window
         aether::WindowSettings settings;
         settings.Title = "Aether Hub";
         settings.Width = 1280;
@@ -54,10 +48,14 @@ int main(int argc, char* argv[])
         auto world = std::make_unique<aether::World>("Editor World");
         engine->SetWorld(std::move(world));
 
-        // 5. Push Overlays
-        engine->PushOverlay(new aether::ImGuiLayer());
+        // 1. Push ImGui Overlay
+        auto* imguiLayer = new aether::ImGuiLayer();
+        engine->PushOverlay(imguiLayer);
 
-        // 6. Push Logic Layers
+        // Tell Engine this is the UI layer so it calls Begin()/End()
+        engine->SetImGuiLayer(imguiLayer);
+
+        // 2. Push Logic Layers
         if (openHub) {
             engine->PushLayer(new aether::ProjectHubLayer());
         }
@@ -72,32 +70,25 @@ int main(int argc, char* argv[])
             }
             else {
                 AETHER_CORE_ERROR("Failed to load project from args: {}", projectPath.string());
-                // Fallback to Hub if load fails
                 engine->PushLayer(new aether::ProjectHubLayer());
             }
         }
 
-        // 7. Launch
         AETHER_CORE_INFO("Aether Engine Initialized. Starting Loop...");
         engine->Run();
     }
-    // --- CATCH STANDARD EXCEPTIONS (e.g. std::filesystem, std::bad_alloc) ---
     catch (const std::exception& e) {
         AETHER_CORE_CRITICAL("FATAL CRASH: Unhandled Exception: {}", e.what());
-
-        // Pause so you can read the error if running from VS without debugger
         std::cout << "Press ENTER to exit..." << std::endl;
         std::cin.get();
         return -1;
     }
-    // --- CATCH UNKNOWN EXCEPTIONS ---
     catch (...) {
         AETHER_CORE_CRITICAL("FATAL CRASH: Unknown Exception occurred!");
         std::cout << "Press ENTER to exit..." << std::endl;
         std::cin.get();
         return -1;
     }
-    // --- GLOBAL SAFETY NET END ---
 
     return 0;
 }

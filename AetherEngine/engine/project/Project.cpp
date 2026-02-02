@@ -1,31 +1,16 @@
 #include "Project.h"
 #include "ProjectSerializer.h"
 #include "../core/Log.h"
+#include "../core/ConfigValidator.h"
 #include "../vendor/json.hpp"
 #include <fstream>
 #include <filesystem>
-#include <algorithm> // Required for validation logic
 
 using json = nlohmann::json;
 
 namespace aether {
 
-    // --- Validation Implementation ---
-    bool Project::IsValidName(const std::string& name)
-    {
-        // 1. Check Empty
-        if (name.empty()) return false;
-
-        // 2. Check Length
-        if (name.length() > 255) return false;
-
-        // 3. Check Characters (Alphanumeric Only)
-        return std::all_of(name.begin(), name.end(), [](char c) {
-            return (c >= 'a' && c <= 'z') ||
-                (c >= 'A' && c <= 'Z') ||
-                (c >= '0' && c <= '9');
-            });
-    }
+    // --- Core Lifecycle ---
 
     std::shared_ptr<Project> Project::New()
     {
@@ -36,6 +21,8 @@ namespace aether {
     std::shared_ptr<Project> Project::Load(const std::filesystem::path& path)
     {
         std::shared_ptr<Project> project = std::make_shared<Project>();
+
+        // This will use the Binary BSON deserializer
         ProjectSerializer serializer(project);
         if (serializer.Deserialize(path)) {
             project->m_ProjectDirectory = path.parent_path();
@@ -47,39 +34,44 @@ namespace aether {
 
     std::shared_ptr<Project> Project::Create(const std::filesystem::path& path)
     {
-        // SECURITY CHECK: Validate Name before touching filesystem
-        std::string projectName = path.stem().string();
-        if (!IsValidName(projectName)) {
-            AETHER_CORE_ERROR("Project Creation Failed: Invalid Name '{0}'. Must be alphanumeric and non-empty.", projectName);
-            return nullptr;
+        // 1. Validate & Sanitize Name
+        std::string rawName = path.stem().string();
+        std::string safeName = ConfigValidator::SanitizeName(rawName);
+
+        if (safeName != rawName) {
+            AETHER_CORE_WARN("Project Name sanitized from '{0}' to '{1}'", rawName, safeName);
         }
 
         std::filesystem::path projectRoot = path.parent_path();
 
-        // 1. Generate Folders
+        // 2. Generate Folders
         if (!std::filesystem::exists(projectRoot)) std::filesystem::create_directories(projectRoot);
         std::filesystem::create_directories(projectRoot / "Assets");
         std::filesystem::create_directories(projectRoot / "ProjectSettings");
 
-        // 2. Generate boot.json
-        json boot;
-        boot["Window"]["Title"] = projectName;
-        boot["Window"]["Width"] = 1280;
-        boot["Window"]["Height"] = 720;
-        boot["Window"]["VSync"] = true;
-        boot["Window"]["Mode"] = 3; // Maximized
-        boot["StartupScene"] = "";
+        // 3. Generate game.config (The Runtime Config - JSON)
+        // We use safe defaults (Maximized) so it guarantees usability on any screen
+        json config;
+        config["Window"]["Title"] = safeName;
+        config["Window"]["Width"] = 1280;
+        config["Window"]["Height"] = 720;
+        config["Window"]["VSync"] = true;
+        // WindowMode::Maximized is usually index 3 (Windowed=0, Borderless=1, Fullscreen=2, Maximized=3)
+        config["Window"]["Mode"] = 3;
+        config["StartupScene"] = "";
 
-        std::ofstream bootOut(projectRoot / "ProjectSettings/boot.json");
-        bootOut << boot.dump(4);
-        bootOut.close();
+        std::ofstream configOut(projectRoot / "ProjectSettings/game.config");
+        configOut << config.dump(4);
+        configOut.close();
 
-        // 3. Generate Manifest
+        // 4. Create Project Instance
         std::shared_ptr<Project> project = std::make_shared<Project>();
-        project->m_Config.Name = projectName;
+        project->m_Config.Name = safeName;
         project->m_Config.AssetDirectory = "Assets";
 
         s_ActiveProject = project;
+
+        // 5. Save .aether (Now uses Binary BSON)
         project->SaveActive(path);
 
         return project;
@@ -93,5 +85,10 @@ namespace aether {
             return true;
         }
         return false;
+    }
+
+    // Helper proxy
+    bool Project::IsValidName(const std::string& name) {
+        return name == ConfigValidator::SanitizeName(name);
     }
 }

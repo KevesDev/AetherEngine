@@ -42,7 +42,7 @@ namespace aether {
         auto squareIB = std::make_shared<IndexBuffer>(squareIndices, 6);
         s_Data->QuadVertexArray->SetIndexBuffer(squareIB);
 
-        // Phase 4: Shader (CRITICAL FIX: Load from /engine/ mount point)
+        // Phase 4: Shader (Load from /engine/ mount point)
         // We moved the shader to EngineContent/shaders/FlatColor.glsl, which is mounted to /engine
         AETHER_CORE_INFO("Renderer2D: Loading FlatColor Shader...");
         s_Data->FlatColorShader = std::make_shared<Shader>("/engine/shaders/FlatColor.glsl", "/engine/shaders/FlatColor.glsl");
@@ -77,5 +77,10 @@ namespace aether {
 
         s_Data->QuadVertexArray->Bind();
         glDrawElements(GL_TRIANGLES, s_Data->QuadVertexArray->GetIndexBuffer()->GetCount(), GL_UNSIGNED_INT, nullptr);
+    }
+
+    void Renderer2D::OnWindowResize(uint32_t width, uint32_t height)
+    {
+        glViewport(0, 0, width, height);
     }
 }

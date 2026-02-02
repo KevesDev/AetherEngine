@@ -1,5 +1,6 @@
 #include "AetherTime.h"
 #include <chrono>
+#include <SDL.h>
 
 namespace aether {
 	using clock = std::chrono::high_resolution_clock;

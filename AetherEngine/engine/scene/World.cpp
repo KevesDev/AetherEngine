@@ -17,11 +17,21 @@ namespace aether {
         AETHER_CORE_INFO("-------------------");
     }
 
+    // TODO: Placeholder for runtime start logic
+    void World::OnRuntimeStart() {
+        // Can be used for Initialize physics, scripts, etc.
+    }
+
     void World::OnUpdate(TimeStep ts, const glm::mat4& viewProjection) {
         // The World is the high-level container that delegates 
         // the simulation and rendering to the Scene Processor.
-        if (m_Scene)
-            m_Scene->OnUpdate(ts, viewProjection);
+        //if (m_Scene)
+        //    m_Scene->OnUpdate(ts, viewProjection);
+    }
+
+    // Returns the registry from the internal scene
+    Registry& World::GetRegistry() {
+        return m_Scene->GetRegistry();
     }
 
     // Accessors required for Serializers and Wrappers

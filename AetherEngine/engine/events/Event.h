@@ -15,6 +15,8 @@
 * 4. Provide easy logging support via operator overloading.
 */
 
+#define AETHER_BIND_EVENT_FN(fn) std::bind(&fn, this, std::placeholders::_1)
+
 namespace aether {
 
 	/* Event Types : Distinct IDs for every specific event

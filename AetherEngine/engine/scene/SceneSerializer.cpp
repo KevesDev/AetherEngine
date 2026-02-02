@@ -47,14 +47,19 @@ namespace aether {
             };
         }
 
-        // 4. Camera Component
+        // 4. Camera Component (Supports Perspective & Orthographic)
         if (entity.HasComponent<CameraComponent>()) {
             auto& cc = entity.GetComponent<CameraComponent>();
             outJson["CameraComponent"] = {
-                { "Size", cc.Size },
-                { "Near", cc.Near },
-                { "Far", cc.Far },
-                { "Primary", cc.Primary }
+                { "ProjectionType", (int)cc.ProjectionType },
+                { "PerspectiveFOV", cc.PerspectiveFOV },
+                { "PerspectiveNear", cc.PerspectiveNear },
+                { "PerspectiveFar", cc.PerspectiveFar },
+                { "OrthographicSize", cc.OrthographicSize },
+                { "OrthographicNear", cc.OrthographicNear },
+                { "OrthographicFar", cc.OrthographicFar },
+                { "Primary", cc.Primary },
+                { "FixedAspectRatio", cc.FixedAspectRatio }
             };
         }
 
@@ -117,6 +122,7 @@ namespace aether {
                 std::string name = entityJson["Tag"];
                 Entity deserializedEntity = m_Scene->CreateEntity(name);
 
+                // Transform
                 if (entityJson.contains("Transform"))
                 {
                     auto& tJson = entityJson["Transform"];
@@ -125,14 +131,12 @@ namespace aether {
                         tc.X = tJson.value("X", 0.0f);
                         tc.Y = tJson.value("Y", 0.0f);
                         tc.Rotation = tJson.value("Rotation", 0.0f);
-                        tc.ScaleX = tJson.value("ScaleX", 100.0f); // Default to 100 as per your previous setup
+                        tc.ScaleX = tJson.value("ScaleX", 100.0f);
                         tc.ScaleY = tJson.value("ScaleY", 100.0f);
-                    }
-                    else {
-                        AETHER_CORE_ERROR("Transform found but is NOT an object!");
                     }
                 }
 
+                // Sprite
                 if (entityJson.contains("Sprite"))
                 {
                     auto& sJson = entityJson["Sprite"];
@@ -143,27 +147,30 @@ namespace aether {
                         sc.B = sJson.value("B", 1.0f);
                         sc.A = sJson.value("A", 1.0f);
                     }
-                    else {
-                        AETHER_CORE_ERROR("Sprite found but is NOT an object!");
-                    }
                 }
 
+                // Camera
                 if (entityJson.contains("CameraComponent")) {
                     auto& cJson = entityJson["CameraComponent"];
                     if (cJson.is_object()) {
                         auto& cc = deserializedEntity.AddComponent<CameraComponent>();
-                        cc.Size = cJson.value("Size", 720.0f);
-                        cc.Near = cJson.value("Near", -1.0f);
-                        cc.Far = cJson.value("Far", 1.0f);
+
+                        cc.ProjectionType = (CameraComponent::Type)cJson.value("ProjectionType", (int)CameraComponent::Type::Orthographic);
+
+                        cc.PerspectiveFOV = cJson.value("PerspectiveFOV", glm::radians(45.0f));
+                        cc.PerspectiveNear = cJson.value("PerspectiveNear", 0.01f);
+                        cc.PerspectiveFar = cJson.value("PerspectiveFar", 1000.0f);
+
+                        cc.OrthographicSize = cJson.value("OrthographicSize", 10.0f);
+                        cc.OrthographicNear = cJson.value("OrthographicNear", -1.0f);
+                        cc.OrthographicFar = cJson.value("OrthographicFar", 1.0f);
+
                         cc.Primary = cJson.value("Primary", true);
-                        AETHER_CORE_INFO("Loaded Camera: Size={0}, Primary={1}", cc.Size, cc.Primary);
-                    }
-                    else {
-                        AETHER_CORE_ERROR("CameraComponent found but is NOT an object!");
+                        cc.FixedAspectRatio = cJson.value("FixedAspectRatio", false);
                     }
                 }
 
-                // Load Hierarchy Data (RelationshipComponent)
+                // Hierarchy
                 if (entityJson.contains("Relationship")) {
                     auto& rJson = entityJson["Relationship"];
                     if (rJson.is_object()) {

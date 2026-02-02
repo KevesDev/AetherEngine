@@ -1,33 +1,27 @@
 #pragma once
-#include "EditorPanel.h"
 #include "../../engine/scene/Scene.h"
 #include "../../engine/ecs/Entity.h"
 
 namespace aether {
 
-    class SceneHierarchyPanel : public EditorPanel
+    class SceneHierarchyPanel
     {
     public:
         SceneHierarchyPanel() = default;
-        SceneHierarchyPanel(Scene* scene); // Raw pointer constructor
+        // Takes raw pointer because World owns the scene exclusively
+        SceneHierarchyPanel(Scene* context);
 
-        // We set the context (Which scene are we looking at?)
-        void SetContext(Scene* scene); // Raw pointer setter
-
-        virtual void OnImGuiRender() override;
+        void SetContext(Scene* context);
+        void OnImGuiRender();
 
         Entity GetSelectedEntity() const { return m_SelectionContext; }
-        void SetSelectedEntity(Entity entity) { m_SelectionContext = entity; }
+        void SetSelectedEntity(Entity entity);
 
     private:
-        // Recursive draw function for the Scene Graph
         void DrawEntityNode(Entity entity);
 
-        // Inspector UI: Draws components for the selected entity
-        void DrawComponents(Entity entity);
-
-        Scene* m_Context = nullptr; // Raw pointer
+    private:
+        Scene* m_Context = nullptr; // FIX: Raw pointer
         Entity m_SelectionContext;
     };
-
 }

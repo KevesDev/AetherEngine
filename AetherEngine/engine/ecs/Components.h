@@ -1,13 +1,13 @@
 #pragma once
 #include <string>
 #include <vector> 
-#include <cstdint> // Added for uint32_t
+#include <cstdint>
+#include <glm/glm.hpp> //Required for glm types
+#include <glm/gtc/matrix_transform.hpp> // Required for glm::radians
 
 namespace aether {
 
-    // Define EntityID here to avoid circular dependency with Registry.h
     using EntityID = uint32_t;
-    // We match the sentinel value used in Entity.h (-1 cast to uint32_t)
     constexpr EntityID NULL_ENTITY = (EntityID)-1;
 
     enum class ReplicationMode {
@@ -21,15 +21,11 @@ namespace aether {
         std::string Tag;
     };
 
-    // PRODUCTION STANDARD: The Scene Graph Node
-    // Maintains a Doubly-Linked List for O(1) Hierarchy Traversal
-    // This allows every entity to know its parent and siblings without pointer chasing.
     struct RelationshipComponent {
         EntityID Parent = NULL_ENTITY;
         EntityID FirstChild = NULL_ENTITY;
         EntityID PreviousSibling = NULL_ENTITY;
         EntityID NextSibling = NULL_ENTITY;
-
         size_t ChildrenCount = 0;
     };
 
@@ -39,7 +35,6 @@ namespace aether {
         float Rotation = 0.0f;
         float ScaleX = 100.0f;
         float ScaleY = 100.0f;
-
         ReplicationMode Replication = ReplicationMode::ServerToAll;
     };
 
@@ -51,9 +46,19 @@ namespace aether {
     };
 
     struct CameraComponent {
-        float Size = 720.0f;
-        float Near = -1.0f;
-        float Far = 1.0f;
+        enum class Type { Perspective = 0, Orthographic = 1 };
+
+        Type ProjectionType = Type::Orthographic;
+
+        float PerspectiveFOV = glm::radians(45.0f);
+        float PerspectiveNear = 0.01f;
+        float PerspectiveFar = 1000.0f;
+
+        float OrthographicSize = 10.0f;
+        float OrthographicNear = -1.0f;
+        float OrthographicFar = 1.0f;
+
         bool Primary = true;
+        bool FixedAspectRatio = false;
     };
 }

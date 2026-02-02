@@ -2,6 +2,8 @@
 #include "../renderer/Renderer2D.h"
 #include "../renderer/CameraUtils.h"
 #include "../ecs/Components.h"
+#include "../ecs/Registry.h" 
+#include "../scene/World.h"
 #include "Log.h"
 #include "AetherTime.h"
 #include "EngineVersion.h"
@@ -16,6 +18,7 @@ namespace aether {
         : m_Spec(engineSpec), m_ImGuiLayer(nullptr)
     {
         Log::Init();
+        AetherTime::Init();
 
         AETHER_ASSERT(!s_Instance, "Engine already exists!");
         s_Instance = this;
@@ -35,26 +38,20 @@ namespace aether {
             props.VSync = windowSettings.VSync;
 
             m_Window = std::unique_ptr<Window>(Window::Create(props));
-            AETHER_ASSERT(m_Window, "Window failed to create!");
+            m_Window->SetEventCallback(AETHER_BIND_EVENT_FN(Engine::OnEvent));
 
-            // REFACTOR: Use Lambda instead of std::bind
-            m_Window->SetEventCallback([this](Event& e) {
-                this->OnEvent(e);
-                });
-
-            AETHER_CORE_INFO("Starting Renderer2D Initialization...");
             Renderer2D::Init();
         }
     }
 
     Engine::~Engine()
     {
-        s_Instance = nullptr;
+        Renderer2D::Shutdown();
     }
 
     void Engine::PushLayer(Layer* layer)
     {
-        // Queue the operation
+        // Queue the operation to avoid iterator invalidation
         m_LayerOperations.emplace_back([this, layer]() {
             m_LayerStack.PushLayer(layer);
             });
@@ -65,16 +62,9 @@ namespace aether {
         // Queue the operation
         m_LayerOperations.emplace_back([this, layer]() {
             m_LayerStack.PushOverlay(layer);
-            if (layer->GetName() == "ImGuiLayer") {
-                m_ImGuiLayer = static_cast<ImGuiLayer*>(layer);
-            }
             });
     }
 
-    /* Note: LayerStack::PopLayer essentially just removes the pointer from the list. 
-    It does not delete the memory, which is correct because layers are often raw pointers 
-    in this architecture).
-    */
     void Engine::PopLayer(Layer* layer)
     {
         // Queue the operation
@@ -86,10 +76,10 @@ namespace aether {
     void Engine::OnEvent(Event& e)
     {
         EventDispatcher dispatcher(e);
-
-        // REFACTOR: Use Lambda instead of std::bind
-        dispatcher.Dispatch<WindowCloseEvent>([this](WindowCloseEvent& e) {
-            return this->OnWindowClose(e);
+        dispatcher.Dispatch<WindowCloseEvent>(AETHER_BIND_EVENT_FN(Engine::OnWindowClose));
+        dispatcher.Dispatch<WindowResizeEvent>([](WindowResizeEvent& e) {
+            Renderer2D::OnWindowResize(e.GetWidth(), e.GetHeight());
+            return false;
             });
 
         for (auto it = m_LayerStack.rbegin(); it != m_LayerStack.rend(); ++it)
@@ -99,75 +89,85 @@ namespace aether {
         }
     }
 
-    void Engine::SetWorld(std::unique_ptr<World> newWorld)
-    {
+    void Engine::SetWorld(std::unique_ptr<World> newWorld) {
         m_ActiveWorld = std::move(newWorld);
-        if (m_ActiveWorld) {
-            AETHER_CORE_INFO("World Loaded: {0}", m_ActiveWorld->GetName());
-        }
+        m_ActiveWorld->OnRuntimeStart();
+        AETHER_CORE_INFO("World Loaded: {0}", m_ActiveWorld->GetName());
     }
 
     void Engine::Run()
     {
-        AETHER_CORE_INFO("Aether Engine Loop Started.");
-        AetherTime::Init();
-
         static bool s_WarnedNoCamera = false;
 
-        while (m_Running) {
-            // --- PROCESS LAYER QUEUE ---
-            // We execute all pending Push/Pop requests here, outside the loop.
-            // This prevents iterator invalidation crashes.
-            for (auto& op : m_LayerOperations) {
-                op();
+        while (m_Running)
+        {
+            // --- 1. PROCESS PENDING COMMANDS (Safe Zone) ---
+            if (!m_LayerOperations.empty()) {
+                for (auto& op : m_LayerOperations) {
+                    op(); // Executes LayerStack::Push, which calls OnAttach
+                }
+                m_LayerOperations.clear();
             }
-            m_LayerOperations.clear();
-            // --------------------------------
 
             AetherTime::Update();
-            TimeStep timestep = AetherTime::DeltaTime();
+            float timestep = (float)AetherTime::DeltaTime();
 
-            if (m_Window) {
-                m_Window->Clear();
-            }
-
-            // --- CAMERA SYSTEM CALCULATION ---
-            glm::mat4 cameraMatrix(1.0f);
+            // --- CAMERA LOGIC ---
             bool cameraFound = false;
+            glm::mat4 cameraMatrix = glm::mat4(1.0f);
 
-#ifndef AETHER_SERVER
-            if (m_ActiveWorld && m_Window) {
-                if (m_Spec.Type == ApplicationType::Client) {
-                    Scene* scene = m_ActiveWorld->GetScene();
-                    auto& registry = scene->GetRegistry();
+#if 1 
+            if (m_ActiveWorld && m_Spec.Type != ApplicationType::Server)
+            {
+                auto& registry = m_ActiveWorld->GetRegistry();
+                auto& camView = registry.View<CameraComponent>();
+                auto& ownerMap = registry.GetOwnerMap<CameraComponent>();
 
-                    auto& cameras = registry.View<CameraComponent>();
-                    auto& owners = registry.GetOwnerMap<CameraComponent>();
+                for (size_t i = 0; i < camView.size(); i++)
+                {
+                    auto& camComp = camView[i];
 
-                    EntityID primaryCamID = (EntityID)-1;
+                    if (camComp.Primary)
+                    {
+                        EntityID id = ownerMap.at(i);
+                        if (registry.HasComponent<TransformComponent>(id))
+                        {
+                            auto* camTransform = registry.GetComponent<TransformComponent>(id);
 
-                    for (size_t i = 0; i < cameras.size(); i++) {
-                        if (cameras[i].Primary) {
-                            primaryCamID = owners.at(i);
-                            break;
-                        }
-                    }
+                            float aspectRatio = 1.777f;
+                            if (m_Window) {
+                                aspectRatio = (float)m_Window->GetWidth() / (float)m_Window->GetHeight();
+                            }
 
-                    if (primaryCamID != (EntityID)-1) {
-                        auto* camData = registry.GetComponent<CameraComponent>(primaryCamID);
-                        auto* camTransform = registry.GetComponent<TransformComponent>(primaryCamID);
+                            glm::mat4 projection;
+                            if (camComp.ProjectionType == CameraComponent::Type::Perspective)
+                            {
+                                projection = CameraUtils::CalculatePerspective(
+                                    camComp.PerspectiveFOV,
+                                    aspectRatio,
+                                    camComp.PerspectiveNear,
+                                    camComp.PerspectiveFar
+                                );
+                            }
+                            else
+                            {
+                                projection = CameraUtils::CalculateOrthographic(
+                                    camComp.OrthographicSize,
+                                    aspectRatio,
+                                    camComp.OrthographicNear,
+                                    camComp.OrthographicFar
+                                );
+                            }
 
-                        if (camData && camTransform) {
-                            float width = (float)m_Window->GetWidth();
-                            float height = (float)m_Window->GetHeight();
-                            float aspectRatio = (height > 0) ? (width / height) : 1.0f;
-
-                            glm::mat4 projection = CameraUtils::CalculateProjection(camData->Size, aspectRatio, camData->Near, camData->Far);
-                            glm::mat4 view = CameraUtils::CalculateView({ camTransform->X, camTransform->Y, 0.0f }, camTransform->Rotation);
+                            glm::mat4 view = CameraUtils::CalculateView(
+                                { camTransform->X, camTransform->Y, 0.0f },
+                                camTransform->Rotation
+                            );
 
                             cameraMatrix = projection * view;
                             cameraFound = true;
                             s_WarnedNoCamera = false;
+                            break;
                         }
                     }
                 }
@@ -183,6 +183,7 @@ namespace aether {
                 m_ActiveWorld->OnUpdate(timestep, cameraMatrix);
             }
 
+            // Iterate Layers (Safe now because stack queue is flushed)
             for (Layer* layer : m_LayerStack)
                 layer->OnUpdate(timestep);
 
