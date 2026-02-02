@@ -8,6 +8,4 @@ target_sources(aether_engine PRIVATE
     VertexArray.h
     Renderer2D.cpp
     Renderer2D.h
-    OrthographicCamera.cpp
-    OrthographicCamera.h
 )

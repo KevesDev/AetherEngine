@@ -9,25 +9,22 @@ namespace aether {
         AETHER_CORE_INFO("-------------------");
         AETHER_CORE_INFO("Initializing World: {0}", m_Name);
 
-        // 1. Initialize ECS
         m_Scene = std::make_unique<Scene>();
-
-        // 2. (Future) Initialize Physics/Partitioning
-        // m_Grid = std::make_unique<PartitionGrid>(...);
     }
 
     World::~World() {
         AETHER_CORE_INFO("Unloading World: {0}", m_Name);
         AETHER_CORE_INFO("-------------------");
-        // m_Scene is automatically destroyed here by unique_ptr
     }
 
-    void World::OnUpdate(double dt) {
-        // 1. Update Subsystems
+    void World::OnUpdate(TimeStep ts, const glm::mat4& viewProjection) {
+        // The World is the high-level container that delegates 
+        // the simulation and rendering to the Scene Processor.
         if (m_Scene)
-            m_Scene->OnUpdate(dt);
-
-        // 2. (Future) Update Streaming
-        // if (m_Grid) m_Grid->Update(dt);
+            m_Scene->OnUpdate(ts, viewProjection);
     }
+
+    // Accessors required for Serializers and Wrappers
+    Scene* World::GetScene() { return m_Scene.get(); }
+    const std::string& World::GetName() const { return m_Name; }
 }

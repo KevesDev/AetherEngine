@@ -3,7 +3,6 @@
 #include "../ecs/Entity.h"
 #include "../core/Log.h"
 #include "../renderer/Renderer2D.h"
-#include "../renderer/OrthographicCamera.h"
 #include <glm/glm.hpp>
 
 namespace aether {
@@ -18,11 +17,8 @@ namespace aether {
 
     Entity Scene::CreateEntity(const std::string& name) {
         Entity entity = { m_Registry.CreateEntity(), &m_Registry };
-
         auto& tag = entity.AddComponent<TagComponent>();
         tag.Tag = name.empty() ? "Entity" : name;
-
-        // Every entity requires a Transform for spatial logic
         entity.AddComponent<TransformComponent>();
 
         AETHER_CORE_TRACE("Created Entity: '{0}' (ID: {1})", tag.Tag, (uint32_t)entity.GetID());
@@ -34,21 +30,17 @@ namespace aether {
         m_Registry.DestroyEntity(entity);
     }
 
-    void Scene::OnUpdate(TimeStep ts) {
-        // 1. Stability: Clamp DeltaTime to 100ms to prevent physics tunneling
+    void Scene::OnUpdate(TimeStep ts, const glm::mat4& viewProjection) {
         float dt = ts.GetSeconds();
-        if (dt > 0.1f) {
-            AETHER_CORE_WARN("High DeltaTime detected ({0}s). Clamped to 0.1s.", dt);
-            dt = 0.1f;
-        }
+        if (dt > 0.1f) dt = 0.1f;
 
-        // 2. Camera: Industry standard 720p Orthographic Projection
-        // Static prevents re-allocation every frame; will move to Component in Phase 5
-        static OrthographicCamera camera(0.0f, 1280.0f, 720.0f, 0.0f);
+        // --- Logic Systems ---
+        // (Physics, Scripts, and other non-graphical systems run here on both Client and Server)
 
-        Renderer2D::BeginScene(camera.GetViewProjectionMatrix());
+        // --- Rendering System (Client/Editor Only) ---
+#ifndef AETHER_SERVER
+        Renderer2D::BeginScene(viewProjection);
 
-        // 3. Render Sprites
         auto& registry = GetRegistry();
         auto& sprites = registry.View<SpriteComponent>();
         auto& owners = registry.GetOwnerMap<SpriteComponent>();
@@ -56,22 +48,23 @@ namespace aether {
         for (size_t i = 0; i < sprites.size(); i++) {
             EntityID id = owners.at(i);
 
-            if (!registry.HasComponent<TransformComponent>(id)) {
-                AETHER_CORE_WARN("Entity {0} has a Sprite but no Transform. Skipping draw.", (uint32_t)id);
-                continue;
-            }
+            // Refactored for Pointer Safety:
+            // We fetch the transform pointer. if the entity has a sprite but no transform, 
+            // the pointer will be null, and we safely skip drawing.
+            auto* transform = registry.GetComponent<TransformComponent>(id);
+            if (!transform) continue;
 
-            auto& transform = registry.GetComponent<TransformComponent>(id);
             auto& sprite = sprites[i];
 
-            // Render using world coordinates
+            // Use -> access because transform is now a pointer
             Renderer2D::DrawQuad(
-                { transform.X, transform.Y },
-                { transform.ScaleX, transform.ScaleY },
+                { transform->X, transform->Y },
+                { transform->ScaleX, transform->ScaleY },
                 { sprite.R, sprite.G, sprite.B, sprite.A }
             );
         }
 
         Renderer2D::EndScene();
+#endif
     }
 }

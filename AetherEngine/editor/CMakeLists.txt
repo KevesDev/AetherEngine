@@ -1,4 +1,4 @@
-﻿add_executable(aether_editor main.cpp "layers/EditorLayer.h" "layers/EditorLayer.cpp")
+﻿add_executable(aether_editor main.cpp "layers/EditorLayer.h" "layers/EditorLayer.cpp" "panels/EditorPanel.h" "panels/SceneHierarchyPanel.cpp")
 target_link_libraries(aether_editor PRIVATE aether_engine)
 
 # AUTOMATED FIX: Copy SDL2.dll to the editor folder

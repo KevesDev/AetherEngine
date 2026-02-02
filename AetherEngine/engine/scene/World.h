@@ -1,33 +1,27 @@
 #pragma once
 
 #include "Scene.h"
-#include <memory>
+#include "../core/AetherTime.h"
 #include <string>
+#include <memory>
+#include <glm/glm.hpp>
 
 namespace aether {
 
     class World {
     public:
-        // Default to "New World" if no name provided
-        World(const std::string& name = "New World");
+        World(const std::string& name = "World");
         ~World();
 
-        // The Master Simulation Loop for this Map
-        void OnUpdate(double dt);
+        void OnUpdate(TimeStep ts, const glm::mat4& viewProjection);
 
-        // Accessors
-        Scene* GetScene() { return m_Scene.get(); }
-        const Scene* GetScene() const { return m_Scene.get(); }
-        const std::string& GetName() const { return m_Name; }
+        // Declarations only (removes the C2084 error)
+        Scene* GetScene();
+        const std::string& GetName() const;
 
     private:
         std::string m_Name;
-
-        // Ownership: World owns the Scene (ECS Registry)
         std::unique_ptr<Scene> m_Scene;
-
-        // Future:
-        // std::unique_ptr<PartitionGrid> m_Grid;
-        // std::unique_ptr<PhysicsWorld> m_Physics; we don't use REAL physics: see documentation
     };
+
 }

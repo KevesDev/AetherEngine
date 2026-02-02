@@ -37,12 +37,12 @@ namespace aether {
         };
         AETHER_CORE_TRACE("Renderer2D: Vertex Buffer created.");
 
+        // This call binds the VAO and VBO together
         auto squareVB = std::make_shared<VertexBuffer>(squareVertices, static_cast<uint32_t>(sizeof(squareVertices)));
         squareVB->SetLayout({ { ShaderDataType::Float3, "a_Position" } });
         s_Data->QuadVertexArray->AddVertexBuffer(squareVB);
 
-        // This call binds the VAO and VBO together
-        s_Data->QuadVertexArray->AddVertexBuffer(squareVB);
+        //s_Data->QuadVertexArray->AddVertexBuffer(squareVB);
         AETHER_CORE_INFO("Renderer2D: Vertex Buffer added.");
 
         // Phase 3: Index Buffer

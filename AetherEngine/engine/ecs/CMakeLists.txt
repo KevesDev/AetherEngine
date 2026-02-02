@@ -2,7 +2,7 @@
 target_sources(aether_engine PRIVATE
     Components.h
     Entity.h
-    Registry.cpp
+    Registry.h
 )
 
 target_include_directories(aether_engine PUBLIC

@@ -1,22 +1,21 @@
 #include <iostream>
-#include "../core/Engine.h"
-#include "../core/EngineVersion.h"
-#include "../core/Log.h"
-#include "../core/Config.h"
-#include "../core/Layers/ImGuiLayer.h"
+#include <memory>
+#include "../engine/core/Engine.h"
+#include "../engine/core/EngineVersion.h"
+#include "../engine/core/Log.h"
+#include "../engine/core/Config.h"
+#include "../engine/core/Layers/ImGuiLayer.h"
 #include "layers/EditorLayer.h"
-
-// Needed to spawn the initial entity
-#include "../scene/World.h"
-#include "../ecs/Components.h"
-#include "../scene/Scene.h"
-#include "../ecs/Entity.h"
-
-// Include the Serializer
-#include "../scene/SceneSerializer.h"
+#include "../engine/scene/World.h"
+#include "../engine/scene/SceneSerializer.h"
+#include "../engine/core/VFS.h"
 
 int main()
 {
+    // 0. Bootstrap Core Systems
+    aether::Log::Init();
+    aether::VFS::Mount("/assets", "assets");
+
     // 1. Identity
     aether::EngineSpecification spec;
     spec.Name = "Aether Editor";
@@ -24,60 +23,47 @@ int main()
 
     // 2. Preferences
     aether::WindowSettings settings;
-    settings.Width = 1280;
-    settings.Height = 720;
-    settings.Title = "Aether Editor";
-    settings.Mode = aether::WindowMode::Maximized;
-    aether::Config::Load("editor.ini", settings);
+    std::string startupScenePath;
 
-    // 3. Start Engine (Initializes VFS and Logging)
-    aether::Engine engine(spec, settings);
-
-    // --- 4. INITIALIZE WORLD STATE ---
-    // The Editor needs a "Sandbox" world to edit.
-    auto world = std::make_unique<aether::World>("Editor Sandbox");
-    aether::Scene* scene = world->GetScene();
-
-    if (scene) {
-        // --- TEST: Create Data ---
-        AETHER_CORE_INFO("--- SERIALIZER TEST START ---");
-
-        auto player = scene->CreateEntity("Red Box");
-        player.AddComponent<aether::SpriteComponent>(1.0f, 0.2f, 0.2f, 1.0f); // Red Color
-        player.GetComponent<aether::TransformComponent>().X = 200.0f; // Move it slightly
-
-        AETHER_CORE_INFO("1. Created Entity: {0} (Red Box)", (uint32_t)player.GetID());
-
-        // --- TEST: Serialize (Save) ---
-        aether::SceneSerializer serializer(scene);
-
-        // Note: VFS maps "/assets" -> local "assets" folder.
-        // Make sure the "assets" folder exists in your project directory!
-        std::string path = "/assets/Level1.json";
-        serializer.Serialize(path);
-
-        // --- TEST: Destroy Data (Clear World) ---
-        scene->DestroyEntity(player);
-        AETHER_CORE_INFO("2. Destroyed Entity. World is empty.");
-
-        // --- TEST: Deserialize (Load) ---
-        serializer.Deserialize(path);
-
-        // Verification: Check if entity exists (The Serializer logs "Deserialized Scene...")
-        AETHER_CORE_INFO("3. Loaded Scene. Check for Red Box.");
-        AETHER_CORE_INFO("--- SERIALIZER TEST END ---");
+    // Note the leading slash for VFS consistency
+    if (!aether::Config::LoadBootConfig("/assets/editor_boot.json", settings, startupScenePath)) {
+        settings.Title = "Aether Editor";
+        settings.VSync = true;
+    }
+    else {
+        settings.Title = "Aether Editor";
     }
 
-    // Set the world active
-    engine.SetWorld(std::move(world));
-    // ---------------------------------
+    // 3. Start Engine
+    auto engine = std::make_unique<aether::Engine>(spec, settings);
+
+    // 4. Load Scene
+    auto world = std::make_unique<aether::World>("Editor World");
+
+    if (!startupScenePath.empty()) {
+        std::string fullPath = startupScenePath;
+        if (fullPath.find("/assets/") == std::string::npos) {
+            fullPath = "/assets/" + fullPath;
+        }
+
+        if (!aether::VFS::ReadText(fullPath).empty()) {
+            aether::SceneSerializer serializer(world->GetScene());
+            serializer.Deserialize(fullPath);
+            AETHER_CORE_INFO("Editor: Loaded startup scene: {0}", fullPath);
+        }
+        else {
+            AETHER_CORE_WARN("Editor: Startup scene not found: {0}", fullPath);
+        }
+    }
+
+    engine->SetWorld(std::move(world));
 
     // 5. Push Layers
-    engine.PushOverlay(new aether::ImGuiLayer());
-    engine.PushLayer(new aether::EditorLayer());
+    engine->PushOverlay(new aether::ImGuiLayer());
+    engine->PushLayer(new aether::EditorLayer());
 
     // 6. Loop
-    engine.Run();
+    engine->Run();
 
     return 0;
 }

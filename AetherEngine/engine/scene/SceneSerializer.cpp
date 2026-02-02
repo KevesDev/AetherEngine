@@ -11,10 +11,7 @@ using json = nlohmann::json;
 
 namespace aether {
 
-    SceneSerializer::SceneSerializer(Scene* scene)
-        : m_Scene(scene)
-    {
-    }
+    SceneSerializer::SceneSerializer(Scene* scene) : m_Scene(scene) {}
 
     // Helper to serialize an individual entity safely
     static void SerializeEntity(json& outJson, Entity entity)
@@ -49,6 +46,17 @@ namespace aether {
                 { "A", sc.A }
             };
         }
+
+        // 4. Camera Component
+        if (entity.HasComponent<CameraComponent>()) {
+            auto& cc = entity.GetComponent<CameraComponent>();
+            outJson["CameraComponent"] = {
+                { "Size", cc.Size },
+                { "Near", cc.Near },
+                { "Far", cc.Far },
+                { "Primary", cc.Primary }
+            };
+        }
     }
 
     void SceneSerializer::Serialize(const std::string& filepath)
@@ -60,8 +68,6 @@ namespace aether {
         Registry& registry = m_Scene->GetRegistry();
 
         // Iterate all entities that have a Tag (which should be all of them)
-        // Note: Registry::View returns the raw vector.
-        // Registry::GetOwnerMap returns the mapping of Index -> EntityID.
         auto& tags = registry.View<TagComponent>();
         auto& ownerMap = registry.GetOwnerMap<TagComponent>();
 
@@ -95,34 +101,57 @@ namespace aether {
         auto entities = sceneJson["Entities"];
         if (entities.is_array())
         {
-            for (auto& entityJson : entities)
-            {
+            for (auto& entityJson : entities) {
                 std::string name = entityJson["Tag"];
                 Entity deserializedEntity = m_Scene->CreateEntity(name);
 
                 if (entityJson.contains("Transform"))
                 {
-                    auto& tc = deserializedEntity.GetComponent<TransformComponent>();
                     auto& tJson = entityJson["Transform"];
-                    tc.X = tJson["X"];
-                    tc.Y = tJson["Y"];
-                    tc.Rotation = tJson["Rotation"];
-                    tc.ScaleX = tJson["ScaleX"];
-                    tc.ScaleY = tJson["ScaleY"];
+                    if (tJson.is_object()) {
+                        auto& tc = deserializedEntity.GetComponent<TransformComponent>();
+                        tc.X = tJson.value("X", 0.0f);
+                        tc.Y = tJson.value("Y", 0.0f);
+                        tc.Rotation = tJson.value("Rotation", 0.0f);
+                        tc.ScaleX = tJson.value("ScaleX", 1.0f);
+                        tc.ScaleY = tJson.value("ScaleY", 1.0f);
+                    }
+                    else {
+                        AETHER_CORE_ERROR("Transform found but is NOT an object!");
+                    }
                 }
 
                 if (entityJson.contains("Sprite"))
                 {
-                    auto& sc = deserializedEntity.AddComponent<SpriteComponent>();
                     auto& sJson = entityJson["Sprite"];
-                    sc.R = sJson["R"];
-                    sc.G = sJson["G"];
-                    sc.B = sJson["B"];
-                    sc.A = sJson["A"];
+                    if (sJson.is_object()) {
+                        auto& sc = deserializedEntity.AddComponent<SpriteComponent>();
+                        sc.R = sJson.value("R", 1.0f);
+                        sc.G = sJson.value("G", 1.0f);
+                        sc.B = sJson.value("B", 1.0f);
+                        sc.A = sJson.value("A", 1.0f);
+                    }
+                    else {
+                        AETHER_CORE_ERROR("Sprite found but is NOT an object!");
+                    }
+                }
+
+                if (entityJson.contains("CameraComponent")) {
+                    auto& cJson = entityJson["CameraComponent"];
+                    if (cJson.is_object()) {
+                        auto& cc = deserializedEntity.AddComponent<CameraComponent>();
+                        cc.Size = cJson.value("Size", 720.0f);
+                        cc.Near = cJson.value("Near", -1.0f);
+                        cc.Far = cJson.value("Far", 1.0f);
+                        cc.Primary = cJson.value("Primary", true);
+                        AETHER_CORE_INFO("Loaded Camera: Size={0}, Primary={1}", cc.Size, cc.Primary);
+                    }
+                    else {
+                        AETHER_CORE_ERROR("CameraComponent found but is NOT an object!");
+                    }
                 }
             }
         }
         AETHER_CORE_INFO("Deserialized Scene from '{0}'", filepath);
     }
-
 }
