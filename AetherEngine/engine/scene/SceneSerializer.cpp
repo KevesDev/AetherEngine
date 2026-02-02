@@ -57,6 +57,18 @@ namespace aether {
                 { "Primary", cc.Primary }
             };
         }
+
+        // 5. Relationship Component (Production Standard: Save Hierarchy)
+        if (entity.HasComponent<RelationshipComponent>()) {
+            auto& rc = entity.GetComponent<RelationshipComponent>();
+            outJson["Relationship"] = {
+                { "Parent", rc.Parent },
+                { "FirstChild", rc.FirstChild },
+                { "NextSibling", rc.NextSibling },
+                { "PrevSibling", rc.PreviousSibling },
+                { "ChildrenCount", rc.ChildrenCount }
+            };
+        }
     }
 
     void SceneSerializer::Serialize(const std::string& filepath)
@@ -67,7 +79,7 @@ namespace aether {
 
         Registry& registry = m_Scene->GetRegistry();
 
-        // Iterate all entities that have a Tag (which should be all of them)
+        // Iterate all entities that have a Tag
         auto& tags = registry.View<TagComponent>();
         auto& ownerMap = registry.GetOwnerMap<TagComponent>();
 
@@ -113,8 +125,8 @@ namespace aether {
                         tc.X = tJson.value("X", 0.0f);
                         tc.Y = tJson.value("Y", 0.0f);
                         tc.Rotation = tJson.value("Rotation", 0.0f);
-                        tc.ScaleX = tJson.value("ScaleX", 1.0f);
-                        tc.ScaleY = tJson.value("ScaleY", 1.0f);
+                        tc.ScaleX = tJson.value("ScaleX", 100.0f); // Default to 100 as per your previous setup
+                        tc.ScaleY = tJson.value("ScaleY", 100.0f);
                     }
                     else {
                         AETHER_CORE_ERROR("Transform found but is NOT an object!");
@@ -148,6 +160,19 @@ namespace aether {
                     }
                     else {
                         AETHER_CORE_ERROR("CameraComponent found but is NOT an object!");
+                    }
+                }
+
+                // Load Hierarchy Data (RelationshipComponent)
+                if (entityJson.contains("Relationship")) {
+                    auto& rJson = entityJson["Relationship"];
+                    if (rJson.is_object()) {
+                        auto& rc = deserializedEntity.AddComponent<RelationshipComponent>();
+                        rc.Parent = rJson.value("Parent", (EntityID)NULL_ENTITY);
+                        rc.FirstChild = rJson.value("FirstChild", (EntityID)NULL_ENTITY);
+                        rc.NextSibling = rJson.value("NextSibling", (EntityID)NULL_ENTITY);
+                        rc.PreviousSibling = rJson.value("PrevSibling", (EntityID)NULL_ENTITY);
+                        rc.ChildrenCount = rJson.value("ChildrenCount", (size_t)0);
                     }
                 }
             }
