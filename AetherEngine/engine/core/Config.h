@@ -1,20 +1,18 @@
 #pragma once
 #include "Engine.h"
 #include <string>
+#include <filesystem>
 
 namespace aether {
 
-	// Static helper class for loading/saving configuration files.
     class Config
     {
     public:
-        // Tries to load settings from 'filepath'. 
-        // If file doesn't exist or errors occur, it leaves 'outSettings' as defaults.
-        static void Load(const std::string& filepath, WindowSettings& outSettings);
+        // Unified JSON Loader
+        // Returns true if successful, false if defaults were used.
+        static bool LoadBootConfig(const std::string& filepath, WindowSettings& outSettings, std::string& outStartupScene);
 
-        // Saves current settings to 'filepath'. 
-        // Useful if we add an "Apply & Save" button in the options menu later.
-        static void Save(const std::string& filepath, const WindowSettings& settings);
+        static void SaveBootConfig(const std::string& filepath, const WindowSettings& settings, const std::string& startupScene);
     };
 
 }

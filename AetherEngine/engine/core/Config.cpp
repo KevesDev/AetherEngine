@@ -1,67 +1,93 @@
 #include "Config.h"
 #include "Log.h"
+#include "VFS.h"
+#include "ConfigValidator.h"
+#include "../vendor/json.hpp"
 #include <fstream>
 #include <sstream>
-#include <algorithm>
+#include <filesystem>
+
+using json = nlohmann::json;
 
 namespace aether {
 
-    // Helper to trim whitespace from start/end of strings
-    static std::string Trim(const std::string& str) {
-        size_t first = str.find_first_not_of(" \t\r\n");
-        if (std::string::npos == first) return "";
-        size_t last = str.find_last_not_of(" \t\r\n");
-        return str.substr(first, (last - first + 1));
+    bool Config::LoadBootConfig(const std::string& filepath, WindowSettings& outSettings, std::string& outStartupScene)
+    {
+        std::string content;
+
+        // 1. Try VFS (Virtual File System)
+        if (filepath.find("/") == 0 || filepath.find("\\") == 0) {
+            content = VFS::ReadText(filepath);
+        }
+
+        // 2. Try Physical Filesystem
+        if (content.empty() && std::filesystem::exists(filepath)) {
+            std::ifstream stream(filepath);
+            std::stringstream strStream;
+            strStream << stream.rdbuf();
+            content = strStream.str();
+        }
+
+        // --- SAFETY FALLBACK 1: File Missing ---
+        if (content.empty()) {
+            Log::Write(LogLevel::Warning, "Config: '" + filepath + "' not found. Using Safe Defaults.");
+            outSettings.Title = "Aether Engine";
+            outSettings.Width = 1280;
+            outSettings.Height = 720;
+            outSettings.Mode = WindowMode::Maximized;
+            outStartupScene = "";
+            return false;
+        }
+
+        try {
+            json configJson = json::parse(content);
+
+            if (configJson.contains("Window")) {
+                auto& win = configJson["Window"];
+                outSettings.Title = win.value("Title", "Aether Engine");
+                outSettings.Width = win.value("Width", 1280);
+                outSettings.Height = win.value("Height", 720);
+                outSettings.VSync = win.value("VSync", true);
+
+                int modeInt = win.value("Mode", (int)WindowMode::Maximized);
+                outSettings.Mode = static_cast<WindowMode>(modeInt);
+            }
+
+            outStartupScene = configJson.value("StartupScene", "");
+
+            // --- SAFETY FALLBACK 2: Validate Data ---
+            // This prevents "0x0" crashes or invalid window states
+            ConfigValidator::ValidateWindowSettings(outSettings);
+
+            Log::Write(LogLevel::Info, "Config: Loaded and Validated settings from " + filepath);
+            return true;
+        }
+        catch (json::exception& e) {
+            Log::Write(LogLevel::Error, "Config: JSON Parsing Error: " + std::string(e.what()) + ". Reverting to defaults.");
+
+            // Reset to safe defaults if JSON is corrupt
+            outSettings.Width = 1280;
+            outSettings.Height = 720;
+            outSettings.Mode = WindowMode::Maximized;
+            return false;
+        }
     }
 
-    void Config::Load(const std::string& filepath, WindowSettings& outSettings)
+    void Config::SaveBootConfig(const std::string& filepath, const WindowSettings& settings, const std::string& startupScene)
     {
-        std::ifstream file(filepath);
-        if (!file.is_open()) {
-            Log::Write(LogLevel::Warning, "Config file not found: " + filepath + ". Using defaults.");
-            // We optionally save a fresh default file so the user has one to edit next time
-            Save(filepath, outSettings);
-            return;
-        }
+        json configJson;
+        configJson["Window"]["Title"] = settings.Title;
+        configJson["Window"]["Width"] = settings.Width;
+        configJson["Window"]["Height"] = settings.Height;
+        configJson["Window"]["VSync"] = settings.VSync;
+        configJson["Window"]["Mode"] = (int)settings.Mode;
+        configJson["StartupScene"] = startupScene;
 
-        std::string line;
-        while (std::getline(file, line)) {
-            // 1. Remove comments
-            size_t commentPos = line.find_first_of("#;");
-            if (commentPos != std::string::npos) line = line.substr(0, commentPos);
+        std::string dump = configJson.dump(4);
+        std::ofstream out(filepath);
+        out << dump;
+        out.close();
 
-            // 2. Find Key=Value split
-            size_t delimiterPos = line.find('=');
-            if (delimiterPos == std::string::npos) continue; // Skip invalid lines
-
-            // 3. Extract and clean
-            std::string key = Trim(line.substr(0, delimiterPos));
-            std::string value = Trim(line.substr(delimiterPos + 1));
-
-            // 4. Map to Struct
-            if (key == "Title")       outSettings.Title = value;
-            else if (key == "Width")  outSettings.Width = std::stoi(value);
-            else if (key == "Height") outSettings.Height = std::stoi(value);
-            else if (key == "VSync")  outSettings.VSync = (value == "true" || value == "1");
-        }
-
-        Log::Write(LogLevel::Info, "Loaded config from " + filepath);
-    }
-
-    void Config::Save(const std::string& filepath, const WindowSettings& settings)
-    {
-        std::ofstream file(filepath);
-        if (!file.is_open()) {
-            Log::Write(LogLevel::Error, "Failed to save config to " + filepath);
-            return;
-        }
-
-        file << "# Aether Engine Configuration\n";
-        file << "Title=" << settings.Title << "\n";
-        file << "Width=" << settings.Width << "\n";
-        file << "Height=" << settings.Height << "\n";
-        file << "VSync=" << (settings.VSync ? "true" : "false") << "\n";
-
-        Log::Write(LogLevel::Info, "Saved config to " + filepath);
+        Log::Write(LogLevel::Info, "Config: Saved settings to " + filepath);
     }
 }

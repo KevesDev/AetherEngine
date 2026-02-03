@@ -1,74 +1,60 @@
-#include <iostream>
 #include "../engine/core/Engine.h"
-#include "../engine/core/EngineVersion.h"
+#include "../engine/core/Config.h"
 #include "../engine/core/Log.h"
-#include "../engine/core/VFS.h"
 #include "../engine/scene/SceneSerializer.h"
+#include "../engine/core/VFS.h"
+#include <iostream>
+#include <memory>
 
-// Vendor
-#include "../engine/vendor/json.hpp"
-using json = nlohmann::json;
+using namespace aether;
 
-int main()
+int main(int argc, char* argv[])
 {
-    AETHER_CORE_INFO("Aether Client Wrapper starting...");
+    // 0. Bootstrap Core Systems
+    // We must init Logging and VFS *before* Config, because Config uses them!
+    Log::Init();
+    VFS::Mount("/assets", "assets");
 
-    // 2. Pre-Init VFS to read Boot Config
-    // We need to mount assets early to find boot.json
-    // TODO: In the future (Phase 4), this line changes to mount a .pak file.
-    aether::VFS::Mount("/assets", "assets");
+    // 1. Load Configuration
+    WindowSettings windowSettings;
+    std::string startupScenePath;
 
-    std::string bootConfigPath = "/assets/boot.json";
-    std::string bootContent = aether::VFS::ReadText(bootConfigPath);
-
-    if (bootContent.empty())
-    {
-        AETHER_CORE_ERROR("CRITICAL: Could not load boot config from '{0}'", bootConfigPath);
-        return -1;
+    // Note the leading slash: "/assets/boot.json" matches the mount point "/assets"
+    if (!Config::LoadBootConfig("/assets/boot.json", windowSettings, startupScenePath)) {
+        AETHER_CORE_WARN("Client: Failed to load specific boot config. Using defaults.");
     }
 
-    // 3. Parse Boot Config
-    json bootJson = json::parse(bootContent);
-
-    std::string windowTitle = bootJson["Window"]["Title"];
-    int width = bootJson["Window"]["Width"];
-    int height = bootJson["Window"]["Height"];
-    std::string startupScene = bootJson["StartupScene"];
-
-    // 4. Setup Engine Spec
-    aether::EngineSpecification spec;
+    // 2. Initialize Engine
+    EngineSpecification spec;
     spec.Name = "Aether Client";
-    spec.Type = aether::ApplicationType::Client; // Important: This prevents Editor UI from loading
+    spec.Type = ApplicationType::Client;
 
-    aether::WindowSettings settings;
-    settings.Title = windowTitle;
-    settings.Width = width;
-    settings.Height = height;
-    settings.Mode = aether::WindowMode::Windowed;
-    settings.VSync = true;
+    auto engine = std::make_unique<Engine>(spec, windowSettings);
 
-    // 5. Initialize Engine
-    // Note: Engine constructor will mount /assets again, but VFS handles duplicates/overrides gracefully.
-    aether::Engine engine(spec, settings);
+    // 3. Load the Startup Scene
+    if (!startupScenePath.empty()) {
+        // Ensure path logic is consistent (add /assets/ if the JSON didn't include it)
+        std::string scenePath = startupScenePath;
+        if (scenePath.find("/assets/") == std::string::npos) {
+            scenePath = "/assets/" + scenePath;
+        }
 
-    // 6. Load the Game World
-    auto world = std::make_unique<aether::World>("Runtime World");
-    aether::Scene* scene = world->GetScene();
-
-    if (scene)
-    {
-        std::string scenePath = "/assets/" + startupScene;
-        AETHER_CORE_INFO("Loading Startup Scene: {0}", scenePath);
-
-        aether::SceneSerializer serializer(scene);
-        serializer.Deserialize(scenePath);
+        if (VFS::ReadText(scenePath).empty()) {
+            AETHER_CORE_ERROR("Startup scene not found or empty: {0}", scenePath);
+        }
+        else {
+            auto world = std::make_unique<World>("Runtime World");
+            SceneSerializer serializer(world->GetScene());
+            serializer.Deserialize(scenePath);
+            engine->SetWorld(std::move(world));
+        }
+    }
+    else {
+        AETHER_CORE_WARN("No startup scene defined in boot.json.");
     }
 
-    // Hand off world to Engine
-    engine.SetWorld(std::move(world));
-
-    // 7. Run!
-    engine.Run();
+    // 4. Run Application
+    engine->Run();
 
     return 0;
 }

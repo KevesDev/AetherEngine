@@ -1,18 +1,56 @@
 #include "Log.h"
+#include <chrono>
+#include <iostream>
+#include <iomanip>
+#include <sstream>
 
-namespace aether
-{
-    void Log::Write(LogLevel level, const std::string& message)
-    {
-        switch (level)
-        {
-            // ANSI Escape Codes for colored output (supported by most modern terminals, including VS Code and newer VS)
-        case LogLevel::Debug:    std::cout << "\033[37m[DEBUG]: \033[0m"; break; // Gray
-        case LogLevel::Info:     std::cout << "\033[32m[INFO]:  \033[0m"; break; // Green
-        case LogLevel::Warning:  std::cout << "\033[33m[WARN]:  \033[0m"; break; // Yellow
-        case LogLevel::Error:    std::cout << "\033[31m[ERROR]: \033[0m"; break; // Red
-        case LogLevel::Critical: std::cout << "\033[41m[CRIT]:  \033[0m"; break; // Red Background
+namespace aether {
+
+    std::vector<LogEntry> Log::s_LogHistory;
+    std::ofstream Log::s_LogFile;
+    std::mutex Log::s_LogMutex;
+
+    void Log::Init() {
+        std::lock_guard<std::mutex> lock(s_LogMutex);
+        s_LogFile.open("AetherLog.log", std::ios::out | std::ios::trunc);
+
+        if (s_LogFile.is_open()) {
+            s_LogFile << "--- Aether Engine Log Started ---" << std::endl;
         }
-        std::cout << message << std::endl;
+
+        s_LogHistory.reserve(1000);
+    }
+
+    void Log::Write(LogLevel level, const std::string& message) {
+        std::lock_guard<std::mutex> lock(s_LogMutex);
+
+        auto now = std::chrono::system_clock::now();
+        auto in_time_t = std::chrono::system_clock::to_time_t(now);
+
+        // Standardizing time format for cross-platform log consistency
+        std::stringstream ss;
+        ss << std::put_time(std::localtime(&in_time_t), "%H:%M:%S");
+        std::string timeStr = ss.str();
+
+        std::string levelStr;
+        switch (level) {
+        case LogLevel::Debug:    levelStr = "[TRACE]"; break;
+        case LogLevel::Info:     levelStr = "[INFO] "; break;
+        case LogLevel::Warning:  levelStr = "[WARN] "; break;
+        case LogLevel::Error:    levelStr = "[ERROR]"; break;
+        case LogLevel::Critical: levelStr = "[CRIT] "; break;
+        }
+
+        std::string formatted = std::format("{} {} {}", timeStr, levelStr, message);
+
+        std::cout << formatted << std::endl;
+
+        if (s_LogFile.is_open()) {
+            s_LogFile << formatted << std::endl;
+            s_LogFile.flush();
+        }
+
+        LogEntry entry = { level, message, timeStr };
+        s_LogHistory.push_back(entry);
     }
 }

@@ -15,6 +15,8 @@
 * 4. Provide easy logging support via operator overloading.
 */
 
+#define AETHER_BIND_EVENT_FN(fn) std::bind(&fn, this, std::placeholders::_1)
+
 namespace aether {
 
 	/* Event Types : Distinct IDs for every specific event
@@ -25,7 +27,8 @@ namespace aether {
 		WindowClose, WindowResize, WindowFocus, WindowLostFocus, WindowMoved,
 		AppTick, AppUpdate, AppRender,
 		KeyPressed, KeyReleased, KeyTyped,
-		MouseButtonPressed, MouseButtonReleased, MouseMoved, MouseScrolled
+		MouseButtonPressed, MouseButtonReleased, MouseMoved, MouseScrolled,
+		FileDrop
 	};
 
 	/* Event Categories: Bitfield for fast filtering (e.g., "Is this an Input event?")

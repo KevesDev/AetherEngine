@@ -21,3 +21,4 @@ CMakeUserPresets.json
 /build
 /out/build/x64-debug
 /AetherEngine/build
+*.log

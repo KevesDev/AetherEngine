@@ -1,11 +1,14 @@
 #include "Engine.h"
+#include "../renderer/Renderer2D.h"
+#include "../renderer/CameraUtils.h"
+#include "../ecs/Components.h"
+#include "../ecs/Registry.h" 
+#include "../scene/World.h"
 #include "Log.h"
 #include "AetherTime.h"
 #include "EngineVersion.h"
 #include "VFS.h"
-
-// NOTE: No Platform/Graphics headers allowed here. 
-// The Engine uses the Window interface for all rendering commands.
+#include <glm/gtc/matrix_transform.hpp>
 
 namespace aether {
 
@@ -14,69 +17,70 @@ namespace aether {
     Engine::Engine(const EngineSpecification& engineSpec, const WindowSettings& windowSettings)
         : m_Spec(engineSpec), m_ImGuiLayer(nullptr)
     {
-        // Strict Singleton Enforcement
-        // If this triggers, we have a major architectural flaw in the application entry point.
-        AETHER_ASSERT(!s_Instance, "Engine already exists! Do not instantiate multiple Engines.");
+        Log::Init();
+        AetherTime::Init();
+
+        AETHER_ASSERT(!s_Instance, "Engine already exists!");
         s_Instance = this;
 
         AETHER_CORE_INFO("Initializing {0}...", m_Spec.Name);
 
-        // --- VFS INITIALIZATION ---
-        // Mount the local "assets" folder to the virtual root "/assets"
-        // TODO: In the future, this will be replaced by mounting a .pak file for Release builds.
         VFS::Mount("/assets", "assets");
-        // --------------------------
 
-        // Headless vs Windowed Initialization
         if (m_Spec.Type == ApplicationType::Server)
         {
             AETHER_CORE_INFO("Running in HEADLESS mode (Server Type Detected).");
-            // No Window created. m_Window remains null.
         }
         else
         {
             std::string fullTitle = windowSettings.Title + " [" + EngineVersion::ToString() + "]";
-
             WindowProps props(fullTitle, windowSettings.Width, windowSettings.Height, windowSettings.Mode);
             props.VSync = windowSettings.VSync;
 
             m_Window = std::unique_ptr<Window>(Window::Create(props));
+            m_Window->SetEventCallback(AETHER_BIND_EVENT_FN(Engine::OnEvent));
 
-            // Validate Window Creation using our new macro
-            AETHER_ASSERT(m_Window, "Window failed to create!");
-
-            m_Window->SetEventCallback(std::bind(&Engine::OnEvent, this, std::placeholders::_1));
-
-            AETHER_CORE_INFO("Window Initialized: {0}x{1} (VSync: {2})",
-                windowSettings.Width, windowSettings.Height, windowSettings.VSync ? "On" : "Off");
+            Renderer2D::Init();
         }
     }
 
     Engine::~Engine()
     {
-        s_Instance = nullptr;
+        Renderer2D::Shutdown();
     }
 
     void Engine::PushLayer(Layer* layer)
     {
-        m_LayerStack.PushLayer(layer);
-		// layer->OnAttach(); handled by LayerStack
+        // Queue the operation to avoid iterator invalidation
+        m_LayerOperations.emplace_back([this, layer]() {
+            m_LayerStack.PushLayer(layer);
+            });
     }
 
     void Engine::PushOverlay(Layer* layer)
     {
-        m_LayerStack.PushOverlay(layer);
-		// layer->OnAttach(); handled by LayerStack
+        // Queue the operation
+        m_LayerOperations.emplace_back([this, layer]() {
+            m_LayerStack.PushOverlay(layer);
+            });
+    }
 
-        if (layer->GetName() == "ImGuiLayer") {
-            m_ImGuiLayer = static_cast<ImGuiLayer*>(layer);
-        }
+    void Engine::PopLayer(Layer* layer)
+    {
+        // Queue the operation
+        m_LayerOperations.emplace_back([this, layer]() {
+            m_LayerStack.PopLayer(layer);
+            });
     }
 
     void Engine::OnEvent(Event& e)
     {
         EventDispatcher dispatcher(e);
-        dispatcher.Dispatch<WindowCloseEvent>(std::bind(&Engine::OnWindowClose, this, std::placeholders::_1));
+        dispatcher.Dispatch<WindowCloseEvent>(AETHER_BIND_EVENT_FN(Engine::OnWindowClose));
+        dispatcher.Dispatch<WindowResizeEvent>([](WindowResizeEvent& e) {
+            Renderer2D::OnWindowResize(e.GetWidth(), e.GetHeight());
+            return false;
+            });
 
         for (auto it = m_LayerStack.rbegin(); it != m_LayerStack.rend(); ++it)
         {
@@ -85,46 +89,104 @@ namespace aether {
         }
     }
 
-    // --- World Management ---
-    void Engine::SetWorld(std::unique_ptr<World> newWorld)
-    {
-        // Move assignment cleanly destroys the previous world
+    void Engine::SetWorld(std::unique_ptr<World> newWorld) {
         m_ActiveWorld = std::move(newWorld);
-
-        if (m_ActiveWorld) {
-            AETHER_CORE_INFO("World Loaded: {0}", m_ActiveWorld->GetName());
-        }
+        m_ActiveWorld->OnRuntimeStart();
+        AETHER_CORE_INFO("World Loaded: {0}", m_ActiveWorld->GetName());
     }
 
     void Engine::Run()
     {
-        AETHER_CORE_INFO("Aether Engine Loop Started.");
-        AetherTime::Init();
+        static bool s_WarnedNoCamera = false;
 
-        while (m_Running) {
-            // 1. Time Management
+        while (m_Running)
+        {
+            // --- 1. PROCESS PENDING COMMANDS (Safe Zone) ---
+            if (!m_LayerOperations.empty()) {
+                for (auto& op : m_LayerOperations) {
+                    op(); // Executes LayerStack::Push, which calls OnAttach
+                }
+                m_LayerOperations.clear();
+            }
+
             AetherTime::Update();
-            TimeStep timestep = AetherTime::DeltaTime();
+            float timestep = (float)AetherTime::DeltaTime();
 
-            // 2. Render Prep (Abstracted)
-            // If we have a window, we clear it via the interface. 
-            // If headless, we skip this entirely.
-            if (m_Window) {
-                m_Window->Clear();
+            // --- CAMERA LOGIC ---
+            bool cameraFound = false;
+            glm::mat4 cameraMatrix = glm::mat4(1.0f);
+
+#if 1 
+            if (m_ActiveWorld && m_Spec.Type != ApplicationType::Server)
+            {
+                auto& registry = m_ActiveWorld->GetRegistry();
+                auto& camView = registry.View<CameraComponent>();
+                auto& ownerMap = registry.GetOwnerMap<CameraComponent>();
+
+                for (size_t i = 0; i < camView.size(); i++)
+                {
+                    auto& camComp = camView[i];
+
+                    if (camComp.Primary)
+                    {
+                        EntityID id = ownerMap.at(i);
+                        if (registry.HasComponent<TransformComponent>(id))
+                        {
+                            auto* camTransform = registry.GetComponent<TransformComponent>(id);
+
+                            float aspectRatio = 1.777f;
+                            if (m_Window) {
+                                aspectRatio = (float)m_Window->GetWidth() / (float)m_Window->GetHeight();
+                            }
+
+                            glm::mat4 projection;
+                            if (camComp.ProjectionType == CameraComponent::Type::Perspective)
+                            {
+                                projection = CameraUtils::CalculatePerspective(
+                                    camComp.PerspectiveFOV,
+                                    aspectRatio,
+                                    camComp.PerspectiveNear,
+                                    camComp.PerspectiveFar
+                                );
+                            }
+                            else
+                            {
+                                projection = CameraUtils::CalculateOrthographic(
+                                    camComp.OrthographicSize,
+                                    aspectRatio,
+                                    camComp.OrthographicNear,
+                                    camComp.OrthographicFar
+                                );
+                            }
+
+                            glm::mat4 view = CameraUtils::CalculateView(
+                                { camTransform->X, camTransform->Y, 0.0f },
+                                camTransform->Rotation
+                            );
+
+                            cameraMatrix = projection * view;
+                            cameraFound = true;
+                            s_WarnedNoCamera = false;
+                            break;
+                        }
+                    }
+                }
+            }
+#endif
+
+            if (!cameraFound && !s_WarnedNoCamera && m_Spec.Type == ApplicationType::Client) {
+                AETHER_CORE_WARN("No Primary Camera found! Using default Identity View.");
+                s_WarnedNoCamera = true;
             }
 
-            // 3. Simulation Step (The World Loop)
-            // This runs the ECS, Logic, and Physics.
-            // Safe to run without a window (Headless Server).
             if (m_ActiveWorld) {
-                m_ActiveWorld->OnUpdate(timestep);
+                m_ActiveWorld->OnUpdate(timestep, cameraMatrix);
             }
 
-            // 4. Layer Update (Editor, UI, Overlays)
+            // Iterate Layers (Safe now because stack queue is flushed)
             for (Layer* layer : m_LayerStack)
                 layer->OnUpdate(timestep);
 
-            // 5. ImGui Rendering (Client/Editor Only)
             if (m_ImGuiLayer)
             {
                 m_ImGuiLayer->Begin();
@@ -133,7 +195,6 @@ namespace aether {
                 m_ImGuiLayer->End();
             }
 
-            // 6. Window Swap & Poll
             if (m_Window) {
                 m_Window->OnUpdate();
             }
@@ -146,5 +207,4 @@ namespace aether {
         m_Running = false;
         return true;
     }
-
 }

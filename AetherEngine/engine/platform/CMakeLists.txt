@@ -1,6 +1,6 @@
 ﻿# Add Platform files to the main engine library
 target_sources(aether_engine PRIVATE
-    Window.cpp
+    Window.h
     SDLWindow.cpp
     SDLInput.cpp
 )

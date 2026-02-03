@@ -64,8 +64,10 @@ namespace aether {
             IndexToEntity.erase(lastIndex);
         }
 
-        T& Get(EntityID entity) {
-            return Data[EntityToIndex[entity]];
+        T* Get(EntityID entity) {
+            auto it = EntityToIndex.find(entity);
+            if (it == EntityToIndex.end()) return nullptr;
+            return &Data[it->second];
         }
 
         bool Has(EntityID entity) override {
@@ -99,7 +101,7 @@ namespace aether {
         }
 
         template<typename T>
-        T& GetComponent(EntityID entity) {
+        T* GetComponent(EntityID entity) {
             return GetPool<T>()->Get(entity);
         }
 

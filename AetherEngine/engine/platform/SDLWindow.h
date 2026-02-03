@@ -16,6 +16,8 @@ namespace aether {
         void OnUpdate() override;
         virtual void Clear() const override;
 
+		virtual void SetTitle(const std::string& title) override;
+
         inline uint32_t GetWidth() const override { return m_Data.Width; }
         inline uint32_t GetHeight() const override { return m_Data.Height; }
 

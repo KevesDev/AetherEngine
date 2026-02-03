@@ -11,10 +11,7 @@ using json = nlohmann::json;
 
 namespace aether {
 
-    SceneSerializer::SceneSerializer(Scene* scene)
-        : m_Scene(scene)
-    {
-    }
+    SceneSerializer::SceneSerializer(Scene* scene) : m_Scene(scene) {}
 
     // Helper to serialize an individual entity safely
     static void SerializeEntity(json& outJson, Entity entity)
@@ -49,6 +46,34 @@ namespace aether {
                 { "A", sc.A }
             };
         }
+
+        // 4. Camera Component (Supports Perspective & Orthographic)
+        if (entity.HasComponent<CameraComponent>()) {
+            auto& cc = entity.GetComponent<CameraComponent>();
+            outJson["CameraComponent"] = {
+                { "ProjectionType", (int)cc.ProjectionType },
+                { "PerspectiveFOV", cc.PerspectiveFOV },
+                { "PerspectiveNear", cc.PerspectiveNear },
+                { "PerspectiveFar", cc.PerspectiveFar },
+                { "OrthographicSize", cc.OrthographicSize },
+                { "OrthographicNear", cc.OrthographicNear },
+                { "OrthographicFar", cc.OrthographicFar },
+                { "Primary", cc.Primary },
+                { "FixedAspectRatio", cc.FixedAspectRatio }
+            };
+        }
+
+        // 5. Relationship Component (Production Standard: Save Hierarchy)
+        if (entity.HasComponent<RelationshipComponent>()) {
+            auto& rc = entity.GetComponent<RelationshipComponent>();
+            outJson["Relationship"] = {
+                { "Parent", rc.Parent },
+                { "FirstChild", rc.FirstChild },
+                { "NextSibling", rc.NextSibling },
+                { "PrevSibling", rc.PreviousSibling },
+                { "ChildrenCount", rc.ChildrenCount }
+            };
+        }
     }
 
     void SceneSerializer::Serialize(const std::string& filepath)
@@ -59,9 +84,7 @@ namespace aether {
 
         Registry& registry = m_Scene->GetRegistry();
 
-        // Iterate all entities that have a Tag (which should be all of them)
-        // Note: Registry::View returns the raw vector.
-        // Registry::GetOwnerMap returns the mapping of Index -> EntityID.
+        // Iterate all entities that have a Tag
         auto& tags = registry.View<TagComponent>();
         auto& ownerMap = registry.GetOwnerMap<TagComponent>();
 
@@ -95,34 +118,72 @@ namespace aether {
         auto entities = sceneJson["Entities"];
         if (entities.is_array())
         {
-            for (auto& entityJson : entities)
-            {
+            for (auto& entityJson : entities) {
                 std::string name = entityJson["Tag"];
                 Entity deserializedEntity = m_Scene->CreateEntity(name);
 
+                // Transform
                 if (entityJson.contains("Transform"))
                 {
-                    auto& tc = deserializedEntity.GetComponent<TransformComponent>();
                     auto& tJson = entityJson["Transform"];
-                    tc.X = tJson["X"];
-                    tc.Y = tJson["Y"];
-                    tc.Rotation = tJson["Rotation"];
-                    tc.ScaleX = tJson["ScaleX"];
-                    tc.ScaleY = tJson["ScaleY"];
+                    if (tJson.is_object()) {
+                        auto& tc = deserializedEntity.GetComponent<TransformComponent>();
+                        tc.X = tJson.value("X", 0.0f);
+                        tc.Y = tJson.value("Y", 0.0f);
+                        tc.Rotation = tJson.value("Rotation", 0.0f);
+                        tc.ScaleX = tJson.value("ScaleX", 100.0f);
+                        tc.ScaleY = tJson.value("ScaleY", 100.0f);
+                    }
                 }
 
+                // Sprite
                 if (entityJson.contains("Sprite"))
                 {
-                    auto& sc = deserializedEntity.AddComponent<SpriteComponent>();
                     auto& sJson = entityJson["Sprite"];
-                    sc.R = sJson["R"];
-                    sc.G = sJson["G"];
-                    sc.B = sJson["B"];
-                    sc.A = sJson["A"];
+                    if (sJson.is_object()) {
+                        auto& sc = deserializedEntity.AddComponent<SpriteComponent>();
+                        sc.R = sJson.value("R", 1.0f);
+                        sc.G = sJson.value("G", 1.0f);
+                        sc.B = sJson.value("B", 1.0f);
+                        sc.A = sJson.value("A", 1.0f);
+                    }
+                }
+
+                // Camera
+                if (entityJson.contains("CameraComponent")) {
+                    auto& cJson = entityJson["CameraComponent"];
+                    if (cJson.is_object()) {
+                        auto& cc = deserializedEntity.AddComponent<CameraComponent>();
+
+                        cc.ProjectionType = (CameraComponent::Type)cJson.value("ProjectionType", (int)CameraComponent::Type::Orthographic);
+
+                        cc.PerspectiveFOV = cJson.value("PerspectiveFOV", glm::radians(45.0f));
+                        cc.PerspectiveNear = cJson.value("PerspectiveNear", 0.01f);
+                        cc.PerspectiveFar = cJson.value("PerspectiveFar", 1000.0f);
+
+                        cc.OrthographicSize = cJson.value("OrthographicSize", 10.0f);
+                        cc.OrthographicNear = cJson.value("OrthographicNear", -1.0f);
+                        cc.OrthographicFar = cJson.value("OrthographicFar", 1.0f);
+
+                        cc.Primary = cJson.value("Primary", true);
+                        cc.FixedAspectRatio = cJson.value("FixedAspectRatio", false);
+                    }
+                }
+
+                // Hierarchy
+                if (entityJson.contains("Relationship")) {
+                    auto& rJson = entityJson["Relationship"];
+                    if (rJson.is_object()) {
+                        auto& rc = deserializedEntity.AddComponent<RelationshipComponent>();
+                        rc.Parent = rJson.value("Parent", (EntityID)NULL_ENTITY);
+                        rc.FirstChild = rJson.value("FirstChild", (EntityID)NULL_ENTITY);
+                        rc.NextSibling = rJson.value("NextSibling", (EntityID)NULL_ENTITY);
+                        rc.PreviousSibling = rJson.value("PrevSibling", (EntityID)NULL_ENTITY);
+                        rc.ChildrenCount = rJson.value("ChildrenCount", (size_t)0);
+                    }
                 }
             }
         }
         AETHER_CORE_INFO("Deserialized Scene from '{0}'", filepath);
     }
-
 }

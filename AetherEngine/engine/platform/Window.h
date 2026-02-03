@@ -44,6 +44,8 @@ namespace aether {
         virtual void Clear() const = 0;
         // ---------------------------------------
 
+        virtual void SetTitle(const std::string& title) = 0;
+
         virtual uint32_t GetWidth() const = 0;
         virtual uint32_t GetHeight() const = 0;
 
