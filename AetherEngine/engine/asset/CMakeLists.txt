@@ -3,9 +3,10 @@ set(ASSET_SOURCES
     AssetLibrary.cpp
     AssetLibrarySerializer.cpp
     AssetManager.cpp
+    AssetMetadata.h
 )
 
-# Create the object library
+# Create the object library without duplicate source entries
 add_library(aether_asset OBJECT ${ASSET_SOURCES})
 
 target_include_directories(aether_asset PUBLIC 

@@ -8,10 +8,8 @@ namespace aether {
 
     void AssetManager::Init()
     {
-        // 1. Create a new empty library
         s_CurrentLibrary = std::make_unique<AssetLibrary>();
 
-        // 2. Load existing registry from disk (if it exists)
         auto project = Project::GetActive();
         AETHER_ASSERT(project, "AssetManager::Init called with no active project!");
 
@@ -25,13 +23,11 @@ namespace aether {
             AETHER_CORE_WARN("AssetManager: No existing library found. Creating new one.");
         }
 
-        // 3. Scan the disk to find NEW files (Auto-Import)
         std::filesystem::path assetDir = Project::GetAssetDirectory();
         if (std::filesystem::exists(assetDir)) {
             ProcessDirectory(assetDir);
         }
 
-        // 4. Save the library immediately to sync any new imports
         serializer.Serialize(libraryPath);
     }
 
@@ -46,12 +42,10 @@ namespace aether {
         {
             if (entry.is_regular_file())
             {
-                // Check if file is already known
                 std::filesystem::path relativePath = std::filesystem::relative(entry.path(), Project::GetAssetDirectory());
 
                 if (!s_CurrentLibrary->HasAsset(relativePath))
                 {
-                    // New file detected! Import it.
                     ImportAsset(relativePath);
                 }
             }
@@ -60,14 +54,16 @@ namespace aether {
 
     void AssetManager::ImportAsset(const std::filesystem::path& filepath)
     {
+        // Production safety guard: Do not proceed if library is missing
+        if (!s_CurrentLibrary) return;
+
         AssetMetadata metadata;
-        metadata.Handle = UUID(); // Generate new ID
+        metadata.Handle = UUID();
         metadata.FilePath = filepath;
         metadata.Type = GetAssetTypeFromExtension(filepath.extension());
 
         if (metadata.Type != AssetType::None) {
             s_CurrentLibrary->AddAsset(metadata);
-            // Use standard logging macro
             AETHER_CORE_INFO("AssetManager: Auto-Imported '{}'", filepath.generic_string());
         }
     }
@@ -100,25 +96,12 @@ namespace aether {
     AssetType AssetManager::GetAssetTypeFromExtension(const std::filesystem::path& extension)
     {
         std::string ext = extension.string();
-
-        // Normalize to lowercase to ensure .PNG and .png are treated the same
         std::transform(ext.begin(), ext.end(), ext.begin(), ::tolower);
 
-        // Raw Texture Formats
-        if (ext == ".png" || ext == ".jpg" || ext == ".jpeg" || ext == ".bmp")
-            return AssetType::Texture2D;
-
-        // Aether Internal Assets (Scenes, Materials, Prefabs)
-        if (ext == ".aeth")
-            return AssetType::Scene;
-
-        // Scripts
-        if (ext == ".cs" || ext == ".lua")
-            return AssetType::Script;
-
-        // Audio
-        if (ext == ".wav" || ext == ".mp3" || ext == ".ogg")
-            return AssetType::Audio;
+        if (ext == ".png" || ext == ".jpg" || ext == ".jpeg" || ext == ".bmp") return AssetType::Texture2D;
+        if (ext == ".aeth") return AssetType::Scene;
+        if (ext == ".cs" || ext == ".lua") return AssetType::Script;
+        if (ext == ".wav" || ext == ".mp3" || ext == ".ogg") return AssetType::Audio;
 
         return AssetType::None;
     }

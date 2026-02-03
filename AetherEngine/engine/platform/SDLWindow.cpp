@@ -96,50 +96,62 @@ namespace aether {
             if (!m_Data.EventCallback) continue;
 
             switch (event.type) {
-            case SDL_QUIT: {
-                WindowCloseEvent e;
-                m_Data.EventCallback(e);
-                break;
-            }
-            case SDL_WINDOWEVENT: {
-                if (event.window.event == SDL_WINDOWEVENT_RESIZED) {
-                    m_Data.Width = event.window.data1;
-                    m_Data.Height = event.window.data2;
-                    WindowResizeEvent e(m_Data.Width, m_Data.Height);
+                case SDL_QUIT: {
+                    WindowCloseEvent e;
                     m_Data.EventCallback(e);
+                    break;
                 }
-                break;
-            }
-            case SDL_KEYDOWN: {
-                KeyPressedEvent e(event.key.keysym.sym, event.key.repeat);
-                m_Data.EventCallback(e);
-                break;
-            }
-            case SDL_KEYUP: {
-                KeyReleasedEvent e(event.key.keysym.sym);
-                m_Data.EventCallback(e);
-                break;
-            }
-            case SDL_MOUSEBUTTONDOWN: {
-                MouseButtonPressedEvent e(event.button.button);
-                m_Data.EventCallback(e);
-                break;
-            }
-            case SDL_MOUSEBUTTONUP: {
-                MouseButtonReleasedEvent e(event.button.button);
-                m_Data.EventCallback(e);
-                break;
-            }
-            case SDL_MOUSEMOTION: {
-                MouseMovedEvent e((float)event.motion.x, (float)event.motion.y);
-                m_Data.EventCallback(e);
-                break;
-            }
-            case SDL_MOUSEWHEEL: {
-                MouseScrolledEvent e((float)event.wheel.x, (float)event.wheel.y);
-                m_Data.EventCallback(e);
-                break;
-            }
+                case SDL_WINDOWEVENT: {
+                    if (event.window.event == SDL_WINDOWEVENT_RESIZED) {
+                        m_Data.Width = event.window.data1;
+                        m_Data.Height = event.window.data2;
+                        WindowResizeEvent e(m_Data.Width, m_Data.Height);
+                        m_Data.EventCallback(e);
+                    }
+                    break;
+                }
+                case SDL_KEYDOWN: {
+                    KeyPressedEvent e(event.key.keysym.sym, event.key.repeat);
+                    m_Data.EventCallback(e);
+                    break;
+                }
+                case SDL_KEYUP: {
+                    KeyReleasedEvent e(event.key.keysym.sym);
+                    m_Data.EventCallback(e);
+                    break;
+                }
+                case SDL_MOUSEBUTTONDOWN: {
+                    MouseButtonPressedEvent e(event.button.button);
+                    m_Data.EventCallback(e);
+                    break;
+                }
+                case SDL_MOUSEBUTTONUP: {
+                    MouseButtonReleasedEvent e(event.button.button);
+                    m_Data.EventCallback(e);
+                    break;
+                }
+                case SDL_MOUSEMOTION: {
+                    MouseMovedEvent e((float)event.motion.x, (float)event.motion.y);
+                    m_Data.EventCallback(e);
+                    break;
+                }
+                case SDL_MOUSEWHEEL: {
+                    MouseScrolledEvent e((float)event.wheel.x, (float)event.wheel.y);
+                    m_Data.EventCallback(e);
+                    break;
+                }
+                case SDL_DROPFILE:
+                {
+                    char* dropped_filedir = event.drop.file;
+                    std::vector<std::string> paths;
+                    paths.push_back(dropped_filedir);
+
+                    FileDropEvent e(paths);
+                    m_Data.EventCallback(e);
+
+                    SDL_free(dropped_filedir); // SDL requires us to free this memory manually
+                    break;
+                }
             }
         }
 

@@ -2,7 +2,7 @@
 # 1. Define the library (Static Lib)
 # We point to the C file we extracted. 
 # Path assumption: engine/vendor/glad/src/glad.c
-add_library(glad STATIC "glad/src/glad.c")
+add_library(glad STATIC "glad/src/glad.c" "stb_image.h")
 
 # 2. Expose the headers
 # This allows any code that uses 'glad' to simply #include <glad/glad.h>

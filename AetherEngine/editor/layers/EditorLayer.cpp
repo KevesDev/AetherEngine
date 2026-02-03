@@ -11,6 +11,7 @@
 #include "../../engine/input/KeyCodes.h"
 #include "../../engine/renderer/Renderer2D.h"
 #include "../asset/AssetManager.h"
+#include "../EditorResources.h"
 
 #include <imgui.h>
 #include <imgui_internal.h>
@@ -55,6 +56,7 @@ namespace aether {
 
         // Initialize the Asset System for this project
         // This will scan the Assets folder and sync the .aethlib
+        EditorResources::Init();
         AssetManager::Init();
 
         AETHER_CORE_INFO("Asset System Initialized for Project: {}", Project::GetActiveConfig().Name);
@@ -65,7 +67,10 @@ namespace aether {
         if (ImGui::GetCurrentContext()) {
             ImGui::SaveIniSettingsToDisk(ImGui::GetIO().IniFilename);
         }
+
+        // Watch cleanup order
         AssetManager::Shutdown();
+        EditorResources::Shutdown();
         AETHER_CORE_INFO("EditorLayer Detached.");
     }
 

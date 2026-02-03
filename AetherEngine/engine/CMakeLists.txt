@@ -3,9 +3,12 @@
 find_package(OpenGL REQUIRED)
 
 # 1. Define the ONE shared engine library
-add_library(aether_engine "")
+# FIX: Include the object files from the asset module
+add_library(aether_engine STATIC
+    $<TARGET_OBJECTS:aether_asset>
+)
 
-# 2. Add subdirectories (They will append their files to aether_engine)
+# 2. Add subdirectories
 add_subdirectory(core)
 add_subdirectory(events)
 add_subdirectory(platform)
