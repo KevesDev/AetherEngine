@@ -7,21 +7,45 @@
 
 namespace aether {
 
-    Texture2D::Texture2D(uint32_t width, uint32_t height)
-        : m_Width(width), m_Height(height), m_InternalFormat(GL_RGBA8), m_DataFormat(GL_RGBA)
+    static GLenum ImageFormatToGLDataFormat(ImageFormat format)
     {
+        switch (format)
+        {
+        case ImageFormat::RGB8:  return GL_RGB;
+        case ImageFormat::RGBA8: return GL_RGBA;
+        }
+        return 0;
+    }
+
+    static GLenum ImageFormatToGLInternalFormat(ImageFormat format)
+    {
+        switch (format)
+        {
+        case ImageFormat::RGB8:  return GL_RGB8;
+        case ImageFormat::RGBA8: return GL_RGBA8;
+        }
+        return 0;
+    }
+
+    Texture2D::Texture2D(const TextureSpecification& specification)
+        : m_Specification(specification), m_Width(m_Specification.Width), m_Height(m_Specification.Height)
+    {
+        m_InternalFormat = ImageFormatToGLInternalFormat(m_Specification.Format);
+        m_DataFormat = ImageFormatToGLDataFormat(m_Specification.Format);
+
         glCreateTextures(GL_TEXTURE_2D, 1, &m_RendererID);
         glTextureStorage2D(m_RendererID, 1, m_InternalFormat, m_Width, m_Height);
 
-        glTextureParameteri(m_RendererID, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-        glTextureParameteri(m_RendererID, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+        // Apply Specification Settings
+        glTextureParameteri(m_RendererID, GL_TEXTURE_MIN_FILTER, m_Specification.MinFilter);
+        glTextureParameteri(m_RendererID, GL_TEXTURE_MAG_FILTER, m_Specification.MagFilter);
 
-        glTextureParameteri(m_RendererID, GL_TEXTURE_WRAP_S, GL_REPEAT);
-        glTextureParameteri(m_RendererID, GL_TEXTURE_WRAP_T, GL_REPEAT);
+        glTextureParameteri(m_RendererID, GL_TEXTURE_WRAP_S, m_Specification.WrapS);
+        glTextureParameteri(m_RendererID, GL_TEXTURE_WRAP_T, m_Specification.WrapT);
     }
 
-    Texture2D::Texture2D(const std::string& path)
-        : m_Path(path), m_InternalFormat(0), m_DataFormat(0)
+    Texture2D::Texture2D(const std::string& path, const TextureSpecification& specification)
+        : m_Path(path), m_Specification(specification) // Copy defaults or overrides
     {
         int width, height, channels;
         stbi_set_flip_vertically_on_load(1);
@@ -32,24 +56,38 @@ namespace aether {
             m_Width = width;
             m_Height = height;
 
-            if (channels == 4) {
-                m_InternalFormat = GL_RGBA8;
-                m_DataFormat = GL_RGBA;
+            // Update spec with actual file data
+            m_Specification.Width = width;
+            m_Specification.Height = height;
+
+            GLenum internalFormat = 0, dataFormat = 0;
+            if (channels == 4)
+            {
+                internalFormat = GL_RGBA8;
+                dataFormat = GL_RGBA;
             }
-            else if (channels == 3) {
-                m_InternalFormat = GL_RGB8;
-                m_DataFormat = GL_RGB;
+            else if (channels == 3)
+            {
+                internalFormat = GL_RGB8;
+                dataFormat = GL_RGB;
             }
 
-            AETHER_ASSERT(m_InternalFormat & m_DataFormat, "Format not supported!");
+            m_InternalFormat = internalFormat;
+            m_DataFormat = dataFormat;
+
+            AETHER_ASSERT(internalFormat & dataFormat, "Format not supported!");
 
             glCreateTextures(GL_TEXTURE_2D, 1, &m_RendererID);
-            glTextureStorage2D(m_RendererID, 1, m_InternalFormat, m_Width, m_Height);
+            glTextureStorage2D(m_RendererID, 1, internalFormat, m_Width, m_Height);
 
-            glTextureParameteri(m_RendererID, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-            glTextureParameteri(m_RendererID, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+            // Apply Settings from Specification (This handles Pixel Art vs Linear)
+            glTextureParameteri(m_RendererID, GL_TEXTURE_MIN_FILTER, m_Specification.MinFilter);
+            glTextureParameteri(m_RendererID, GL_TEXTURE_MAG_FILTER, m_Specification.MagFilter);
 
-            glTextureSubImage2D(m_RendererID, 0, 0, 0, m_Width, m_Height, m_DataFormat, GL_UNSIGNED_BYTE, data);
+            glTextureParameteri(m_RendererID, GL_TEXTURE_WRAP_S, m_Specification.WrapS);
+            glTextureParameteri(m_RendererID, GL_TEXTURE_WRAP_T, m_Specification.WrapT);
+
+            glTextureSubImage2D(m_RendererID, 0, 0, 0, m_Width, m_Height, dataFormat, GL_UNSIGNED_BYTE, data);
 
             stbi_image_free(data);
         }

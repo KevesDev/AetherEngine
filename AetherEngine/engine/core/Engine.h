@@ -41,6 +41,9 @@ namespace aether {
         void Run();
         void OnEvent(Event& e);
 
+        // Public API for shutdown
+        void Close();
+
         // API queues operations to be executed safely at the start of the frame
         void PushLayer(Layer* layer);
         void PushOverlay(Layer* layer);
@@ -70,7 +73,7 @@ namespace aether {
 
         std::unique_ptr<World> m_ActiveWorld;
 
-        // DO NOT CHANGE: Command Queue for safe layer operations
+        // Command Queue for safe layer operations
         std::vector<std::function<void()>> m_LayerOperations;
     };
 }
