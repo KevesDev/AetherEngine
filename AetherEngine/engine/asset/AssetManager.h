@@ -2,6 +2,7 @@
 #include "AssetLibrary.h"
 #include "../project/Project.h"
 #include <filesystem>
+#include <string>
 
 namespace aether {
 
@@ -9,7 +10,6 @@ namespace aether {
     {
     public:
         // --- Lifecycle ---
-        // Called when a project is loaded to sync the library with the disk
         static void Init();
         static void Shutdown();
 
@@ -25,6 +25,10 @@ namespace aether {
 
         // --- Helper ---
         static AssetType GetAssetTypeFromExtension(const std::filesystem::path& extension);
+
+        // --- Factory ---
+        // Creates a valid, stamped .aeth file and automatically registers it
+        static void CreateAsset(const std::string& filename, const std::filesystem::path& directory, AssetType type);
 
     private:
         static void ProcessDirectory(const std::filesystem::path& directory);

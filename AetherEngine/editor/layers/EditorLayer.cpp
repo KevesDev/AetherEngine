@@ -10,7 +10,7 @@
 #include "../../engine/events/ApplicationEvent.h"
 #include "../../engine/input/KeyCodes.h"
 #include "../../engine/renderer/Renderer2D.h"
-#include "../asset/AssetManager.h"
+#include "../asset/AssetManager.h" // Required for AssetType and Init
 #include "../EditorResources.h"
 
 #include <imgui.h>
@@ -54,8 +54,8 @@ namespace aether {
 
         AETHER_CORE_INFO("Framebuffer Initialized successfully.");
 
-        // Initialize the Asset System for this project
-        // This will scan the Assets folder and sync the .aethlib
+        // 5. Initialize Asset System
+        // Resources MUST be initialized before AssetManager to ensure icons are ready for auto-import
         EditorResources::Init();
         AssetManager::Init();
 
@@ -68,7 +68,7 @@ namespace aether {
             ImGui::SaveIniSettingsToDisk(ImGui::GetIO().IniFilename);
         }
 
-        // Watch cleanup order
+        // Cleanup in reverse order
         AssetManager::Shutdown();
         EditorResources::Shutdown();
         AETHER_CORE_INFO("EditorLayer Detached.");
@@ -185,11 +185,27 @@ namespace aether {
             {
                 ImGui::PushStyleColor(ImGuiCol_Text, theme.Text);
 
+                // --- Creation Wizard Hook ---
+                if (ImGui::BeginMenu("New"))
+                {
+                    if (ImGui::MenuItem("Scene"))
+                    {
+                        // Launches the same Wizard as the Content Browser
+                        m_ContentBrowserPanel.TriggerCreateAsset(AssetType::Scene);
+                    }
+                    if (ImGui::MenuItem("Logic Graph"))
+                    {
+                        m_ContentBrowserPanel.TriggerCreateAsset(AssetType::LogicGraph);
+                    }
+                    ImGui::EndMenu();
+                }
+                ImGui::Separator();
+                // ---------------------------------
+
                 if (ImGui::MenuItem("Save Project", "Ctrl+S"))
                 {
                     auto project = Project::GetActive();
                     if (project) {
-                        // : Use project name for filename
                         std::string filename = project->GetConfig().Name + ".aether";
                         ProjectSerializer serializer(project);
                         serializer.Serialize(project->GetProjectDirectory() / filename);
@@ -218,12 +234,9 @@ namespace aether {
             ImGui::PopStyleColor(); // Pop AccentPrimary
             ImGui::EndMenuBar();
 
-            // : Draw Lavender Border for visibility
-            // We draw this *after* EndMenuBar so it overlays on top
+            // Draw Lavender Border for visibility
             ImVec2 p_min = ImGui::GetWindowPos();
             ImVec2 p_max = ImVec2(p_min.x + ImGui::GetWindowWidth(), p_min.y + ImGui::GetFrameHeight());
-
-            // Draw a 1px border rectangle using AccentPrimary
             ImGui::GetWindowDrawList()->AddRect(p_min, p_max, ImGui::ColorConvertFloat4ToU32(theme.AccentPrimary));
         }
 

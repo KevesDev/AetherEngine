@@ -3,15 +3,21 @@
 #include "../ecs/Components.h"
 #include "../core/VFS.h"
 #include "../core/Log.h"
+#include "../asset/AssetMetadata.h" // Required for AssetHeader
 
 // Vendor Include
 #include "../vendor/json.hpp" 
+#include <fstream>
+#include <sstream>
 
 using json = nlohmann::json;
 
 namespace aether {
 
-    SceneSerializer::SceneSerializer(Scene* scene) : m_Scene(scene) {}
+    SceneSerializer::SceneSerializer(Scene* scene)
+        : m_Scene(scene)
+    {
+    }
 
     // Helper to serialize an individual entity safely
     static void SerializeEntity(json& outJson, Entity entity)
@@ -47,7 +53,7 @@ namespace aether {
             };
         }
 
-        // 4. Camera Component (Supports Perspective & Orthographic)
+        // 4. Camera Component
         if (entity.HasComponent<CameraComponent>()) {
             auto& cc = entity.GetComponent<CameraComponent>();
             outJson["CameraComponent"] = {
@@ -63,7 +69,7 @@ namespace aether {
             };
         }
 
-        // 5. Relationship Component (Production Standard: Save Hierarchy)
+        // 5. Relationship Component
         if (entity.HasComponent<RelationshipComponent>()) {
             auto& rc = entity.GetComponent<RelationshipComponent>();
             outJson["Relationship"] = {
@@ -84,13 +90,14 @@ namespace aether {
 
         Registry& registry = m_Scene->GetRegistry();
 
-        // Iterate all entities that have a Tag
         auto& tags = registry.View<TagComponent>();
         auto& ownerMap = registry.GetOwnerMap<TagComponent>();
 
         for (size_t i = 0; i < tags.size(); i++)
         {
             EntityID id = ownerMap.at(i);
+
+            // Pass the Registry pointer
             Entity entity(id, &registry);
 
             if (!entity) continue;
@@ -100,20 +107,70 @@ namespace aether {
             sceneJson["Entities"].push_back(entityJson);
         }
 
-        std::string dump = sceneJson.dump(4); // Pretty print
-        VFS::WriteText(filepath, dump);
-        AETHER_CORE_INFO("Serialized Scene to '{0}'", filepath);
+        std::string jsonDump = sceneJson.dump(4); // Pretty print
+
+        // --- SECURITY: Write Binary Header First ---
+        std::ofstream fout(filepath, std::ios::binary);
+        if (!fout)
+        {
+            AETHER_CORE_ERROR("SceneSerializer: Could not create file '{}'", filepath);
+            return;
+        }
+
+        AssetHeader header;
+        header.Type = AssetType::Scene; // Validates this file as a Scene
+
+        // 1. Write the Header
+        fout.write(reinterpret_cast<char*>(&header), sizeof(AssetHeader));
+
+        // 2. Write the JSON body
+        fout.write(jsonDump.c_str(), jsonDump.size());
+
+        fout.close();
+        AETHER_CORE_INFO("Serialized Scene (Secured) to '{0}'", filepath);
     }
 
     void SceneSerializer::Deserialize(const std::string& filepath)
     {
-        std::string fileContent = VFS::ReadText(filepath);
-        if (fileContent.empty()) {
-            AETHER_CORE_ERROR("Failed to load scene: {0}", filepath);
+        std::ifstream stream(filepath, std::ios::binary);
+        if (!stream)
+        {
+            AETHER_CORE_ERROR("SceneSerializer: Could not open file '{}'", filepath);
             return;
         }
 
-        json sceneJson = json::parse(fileContent);
+        // --- SECURITY: Verify Header ---
+        AssetHeader header;
+        stream.read(reinterpret_cast<char*>(&header), sizeof(AssetHeader));
+
+        bool isValid = true;
+        if (stream.gcount() != sizeof(AssetHeader)) isValid = false;
+
+        // Check Magic "AETH"
+        if (header.Magic[0] != 'A' || header.Magic[1] != 'E' ||
+            header.Magic[2] != 'T' || header.Magic[3] != 'H') isValid = false;
+
+        // Check Type
+        if (header.Type != AssetType::Scene) isValid = false;
+
+        if (!isValid)
+        {
+            AETHER_CORE_ERROR("SceneSerializer: Security Violation - Invalid or Corrupted Scene File: '{}'", filepath);
+            return;
+        }
+
+        // Read the rest of the file (JSON body)
+        std::stringstream ss;
+        ss << stream.rdbuf();
+
+        json sceneJson;
+        try {
+            sceneJson = json::parse(ss.str());
+        }
+        catch (json::parse_error& e) {
+            AETHER_CORE_ERROR("SceneSerializer: Failed to parse JSON body: {}", e.what());
+            return;
+        }
 
         auto entities = sceneJson["Entities"];
         if (entities.is_array())
@@ -154,17 +211,13 @@ namespace aether {
                     auto& cJson = entityJson["CameraComponent"];
                     if (cJson.is_object()) {
                         auto& cc = deserializedEntity.AddComponent<CameraComponent>();
-
                         cc.ProjectionType = (CameraComponent::Type)cJson.value("ProjectionType", (int)CameraComponent::Type::Orthographic);
-
                         cc.PerspectiveFOV = cJson.value("PerspectiveFOV", glm::radians(45.0f));
                         cc.PerspectiveNear = cJson.value("PerspectiveNear", 0.01f);
                         cc.PerspectiveFar = cJson.value("PerspectiveFar", 1000.0f);
-
                         cc.OrthographicSize = cJson.value("OrthographicSize", 10.0f);
                         cc.OrthographicNear = cJson.value("OrthographicNear", -1.0f);
                         cc.OrthographicFar = cJson.value("OrthographicFar", 1.0f);
-
                         cc.Primary = cJson.value("Primary", true);
                         cc.FixedAspectRatio = cJson.value("FixedAspectRatio", false);
                     }
@@ -184,6 +237,6 @@ namespace aether {
                 }
             }
         }
-        AETHER_CORE_INFO("Deserialized Scene from '{0}'", filepath);
+        AETHER_CORE_INFO("Deserialized Scene (Verified) from '{0}'", filepath);
     }
 }
