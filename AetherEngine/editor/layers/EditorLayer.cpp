@@ -10,6 +10,7 @@
 #include "../../engine/events/ApplicationEvent.h"
 #include "../../engine/input/KeyCodes.h"
 #include "../../engine/renderer/Renderer2D.h"
+#include "../asset/AssetManager.h"
 
 #include <imgui.h>
 #include <imgui_internal.h>
@@ -51,6 +52,12 @@ namespace aether {
         m_Framebuffer = Framebuffer::Create(fbSpec);
 
         AETHER_CORE_INFO("Framebuffer Initialized successfully.");
+
+        // Initialize the Asset System for this project
+        // This will scan the Assets folder and sync the .aethlib
+        AssetManager::Init();
+
+        AETHER_CORE_INFO("Asset System Initialized for Project: {}", Project::GetActiveConfig().Name);
     }
 
     void EditorLayer::OnDetach()
@@ -58,6 +65,7 @@ namespace aether {
         if (ImGui::GetCurrentContext()) {
             ImGui::SaveIniSettingsToDisk(ImGui::GetIO().IniFilename);
         }
+        AssetManager::Shutdown();
         AETHER_CORE_INFO("EditorLayer Detached.");
     }
 
@@ -134,9 +142,10 @@ namespace aether {
 
         Theme theme;
 
+        Entity selectedEntity = m_SceneHierarchyPanel.GetSelectedEntity();
+
         // --- 1. Panels Context ---
         m_SceneHierarchyPanel.SetContext(world->GetScene());
-        Entity selectedEntity = m_SceneHierarchyPanel.GetSelectedEntity();
         m_InspectorPanel.SetContext(selectedEntity);
 
         // --- 2. Dockspace Setup ---
@@ -222,6 +231,7 @@ namespace aether {
         // --- 4. Render Panels ---
         m_SceneHierarchyPanel.OnImGuiRender();
         m_InspectorPanel.OnImGuiRender();
+        m_ContentBrowserPanel.OnImGuiRender();
 
         // --- 5. Render Viewport ---
         ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0.0f, 0.0f));
@@ -262,10 +272,12 @@ namespace aether {
         ImGuiID dock_main_id = dockspace_id;
         ImGuiID dock_right_id = ImGui::DockBuilderSplitNode(dock_main_id, ImGuiDir_Right, 0.25f, nullptr, &dock_main_id);
         ImGuiID dock_left_id = ImGui::DockBuilderSplitNode(dock_main_id, ImGuiDir_Left, 0.20f, nullptr, &dock_main_id);
+        ImGuiID dock_bottom_id = ImGui::DockBuilderSplitNode(dock_main_id, ImGuiDir_Down, 0.30f, nullptr, &dock_main_id);
 
         ImGui::DockBuilderDockWindow("Viewport", dock_main_id);
         ImGui::DockBuilderDockWindow("Inspector", dock_right_id);
         ImGui::DockBuilderDockWindow("Scene Hierarchy", dock_left_id);
+        ImGui::DockBuilderDockWindow("Content Browser", dock_bottom_id);
 
         ImGui::DockBuilderFinish(dockspace_id);
     }

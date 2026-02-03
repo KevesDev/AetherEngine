@@ -3,6 +3,7 @@
 #include "../../engine/renderer/Framebuffer.h" // Required for m_Framebuffer
 #include "../panels/SceneHierarchyPanel.h"
 #include "../panels/InspectorPanel.h"
+#include "../panels/ContentBrowserPanel.h"
 #include "../EditorCamera.h"
 #include <string>
 #include <glm/glm.hpp>
@@ -37,6 +38,7 @@ namespace aether {
         // --- Panels ---
         SceneHierarchyPanel m_SceneHierarchyPanel;
         InspectorPanel m_InspectorPanel;
+        ContentBrowserPanel m_ContentBrowserPanel;
 
         // --- Editor Tools ---
         EditorCamera m_EditorCamera;
