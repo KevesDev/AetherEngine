@@ -3,8 +3,13 @@
 #include "../../engine/project/Project.h"
 #include "../../engine/core/Theme.h"
 #include "../../engine/asset/AssetManager.h"
+#include "../commands/CommandHistory.h"     // Command System Integration
+#include "../commands/DeleteAssetCommand.h" // Concrete Command
 #include <imgui.h>
 #include <cstring>
+#include <filesystem>
+#include <algorithm>
+#include <vector>
 
 namespace aether {
 
@@ -12,21 +17,57 @@ namespace aether {
     {
         m_BaseDirectory = Project::GetAssetDirectory();
         m_CurrentDirectory = m_BaseDirectory;
+
+        m_FileBrowser.SetTitle("Import Asset");
+        m_FileBrowser.SetSearchHint("Search supported files...");
+        m_FileBrowser.SetFileExtensions(AssetManager::GetImportableExtensions());
     }
 
     void ContentBrowserPanel::TriggerCreateAsset(AssetType type)
     {
         m_PendingAssetType = type;
-        memset(m_CreationBuffer, 0, sizeof(m_CreationBuffer)); // Clear buffer
+        memset(m_CreationBuffer, 0, sizeof(m_CreationBuffer));
         m_CreationErrorMessage = "";
-        m_OpenCreationPopup = true; // Signal to open on next frame
+        m_OpenCreationPopup = true;
+    }
+
+    void ContentBrowserPanel::TriggerImport()
+    {
+        // Defer the open call to the main update loop to avoid ID Stack issues
+        m_ShowImportPopup = true;
     }
 
     void ContentBrowserPanel::OnImGuiRender()
     {
         ImGui::Begin("Content Browser");
+        Theme theme;
 
-        Theme theme; // Use our unified theme system
+        // --- TOOLBAR ---
+        if (m_CurrentDirectory != m_BaseDirectory)
+        {
+            if (ImGui::Button("<- Back"))
+                m_CurrentDirectory = m_CurrentDirectory.parent_path();
+            ImGui::SameLine();
+        }
+
+        ImGui::PushStyleColor(ImGuiCol_Button, theme.AccentCyan);
+        ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0, 0, 0, 1));
+        if (ImGui::Button("Import Asset")) TriggerImport();
+        ImGui::PopStyleColor(2);
+
+        ImGui::Separator();
+
+        // --- CONTEXT MENU (Global) ---
+        if (ImGui::BeginPopupContextWindow("ContentBrowserContext", ImGuiPopupFlags_MouseButtonRight | ImGuiPopupFlags_NoOpenOverItems))
+        {
+            if (ImGui::MenuItem("New Scene...")) TriggerCreateAsset(AssetType::Scene);
+            if (ImGui::MenuItem("New Logic Graph...")) TriggerCreateAsset(AssetType::LogicGraph);
+            ImGui::Separator();
+            if (ImGui::MenuItem("Import...")) TriggerImport();
+            ImGui::EndPopup();
+        }
+
+        // --- GRID RENDERING ---
         static float padding = 16.0f;
         static float thumbnailSize = 64.0f;
         float cellSize = thumbnailSize + padding;
@@ -34,39 +75,38 @@ namespace aether {
         int columnCount = (int)(panelWidth / cellSize);
         if (columnCount < 1) columnCount = 1;
 
-        if (m_CurrentDirectory != m_BaseDirectory)
-        {
-            if (ImGui::Button("<- Back"))
-                m_CurrentDirectory = m_CurrentDirectory.parent_path();
-            ImGui::Separator();
-        }
-
-        // --- CONTEXT MENU ---
-        // Right-clicking empty space triggers the creation wizard
-        if (ImGui::BeginPopupContextWindow("ContentBrowserContext", ImGuiPopupFlags_MouseButtonRight | ImGuiPopupFlags_NoOpenOverItems))
-        {
-            if (ImGui::MenuItem("New Scene..."))
-            {
-                TriggerCreateAsset(AssetType::Scene);
-            }
-            if (ImGui::MenuItem("New Logic Graph..."))
-            {
-                TriggerCreateAsset(AssetType::LogicGraph);
-            }
-            ImGui::EndPopup();
-        }
-
-        // --- GRID RENDERING ---
         ImGui::Columns(columnCount, 0, false);
+
+        // Cache importable extensions for the filter loop
+        auto importableExts = AssetManager::GetImportableExtensions();
+
         for (auto& directoryEntry : std::filesystem::directory_iterator(m_CurrentDirectory))
         {
             const auto& path = directoryEntry.path();
             std::string filenameString = path.filename().string();
+            std::string ext = path.extension().string();
+
+            // --- FILTERING LOGIC ---
+            // If "Show Raw Assets" is disabled, we skip importable files (png, jpg)
+            if (!m_ShowRawAssets && !directoryEntry.is_directory())
+            {
+                std::string lowerExt = ext;
+                std::transform(lowerExt.begin(), lowerExt.end(), lowerExt.begin(), ::tolower);
+
+                bool isRawSource = false;
+                for (const auto& imp : importableExts) {
+                    if (imp == lowerExt) { isRawSource = true; break; }
+                }
+
+                if (isRawSource) continue; // Skip rendering this item
+            }
+            // -----------------------
 
             ImGui::PushID(filenameString.c_str());
 
             std::shared_ptr<Texture2D> icon = EditorResources::FileIcon;
             ImVec4 iconTint = { 1, 1, 1, 1 };
+            AssetType fileType = AssetType::None;
 
             if (directoryEntry.is_directory())
             {
@@ -74,19 +114,23 @@ namespace aether {
             }
             else
             {
-                // Registry Check: Is this a valid Aether Asset?
                 auto relativePath = std::filesystem::relative(path, Project::GetAssetDirectory());
+
                 if (AssetManager::HasAsset(relativePath))
                 {
-                    AssetType type = AssetManager::GetMetadata(relativePath).Type;
-                    // Assign icon based on type (We can expand this list later)
-                    if (type == AssetType::Texture2D) icon = EditorResources::TextureIcon;
-                    // else if (type == AssetType::Scene) icon = EditorResources::SceneIcon; 
+                    fileType = AssetManager::GetMetadata(relativePath).Type;
+                    if (fileType == AssetType::Texture2D) icon = EditorResources::TextureIcon;
                 }
                 else
                 {
-                    // Tint red-ish if not imported/valid
-                    iconTint = { 1.0f, 0.7f, 0.7f, 1.0f };
+                    // Check if importable
+                    auto importable = AssetManager::GetImportableExtensions();
+                    std::string lowerExt = ext;
+                    std::transform(lowerExt.begin(), lowerExt.end(), lowerExt.begin(), ::tolower);
+                    bool isImportable = false;
+                    for (const auto& imp : importable) { if (imp == lowerExt) isImportable = true; }
+
+                    if (isImportable) iconTint = { 1.0f, 1.0f, 1.0f, 0.5f };
                 }
             }
 
@@ -96,6 +140,18 @@ namespace aether {
             ImGui::ImageButton("asset_btn", (ImTextureID)(uintptr_t)icon->GetRendererID(),
                 { thumbnailSize, thumbnailSize }, { 0, 1 }, { 1, 0 },
                 ImVec4(0, 0, 0, 0), iconTint);
+            ImGui::PopStyleColor();
+
+            // --- ITEM CONTEXT MENU (Right-Click on Asset) ---
+            if (ImGui::BeginPopupContextItem())
+            {
+                if (ImGui::MenuItem("Delete"))
+                {
+                    auto relativePath = std::filesystem::relative(path, Project::GetAssetDirectory());
+                    CommandHistory::Execute(std::make_shared<DeleteAssetCommand>(relativePath));
+                }
+                ImGui::EndPopup();
+            }
 
             if (ImGui::BeginDragDropSource())
             {
@@ -105,12 +161,12 @@ namespace aether {
                 ImGui::EndDragDropSource();
             }
 
-            ImGui::PopStyleColor();
-
             if (ImGui::IsItemHovered() && ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left))
             {
                 if (directoryEntry.is_directory())
                     m_CurrentDirectory /= path.filename();
+                else if (fileType != AssetType::None && m_OnAssetOpened)
+                    m_OnAssetOpened(path);
             }
 
             ImGui::TextWrapped("%s", filenameString.c_str());
@@ -119,111 +175,56 @@ namespace aether {
         }
         ImGui::Columns(1);
 
-        // --- DRAW WIZARD (Modal) ---
         RenderCreationModal();
+
+        // Handle deferred popup opening (Fixes Context Menu issue)
+        if (m_ShowImportPopup) {
+            m_FileBrowser.Open();
+            m_ShowImportPopup = false;
+        }
+
+        // FILE BROWSER
+        std::filesystem::path selectedPath;
+        if (m_FileBrowser.Render(selectedPath))
+        {
+            std::string filename = selectedPath.filename().string();
+            std::filesystem::path destPath = m_CurrentDirectory / filename;
+
+            try {
+                if (!std::filesystem::exists(destPath)) {
+                    std::filesystem::copy_file(selectedPath, destPath);
+                    AssetManager::ImportSourceFile(destPath);
+                }
+            }
+            catch (std::filesystem::filesystem_error& e) { /* Log error if necessary */ }
+        }
 
         ImGui::End();
     }
 
     void ContentBrowserPanel::RenderCreationModal()
     {
-        // Check if we need to open the popup (signaled by TriggerCreateAsset)
-        if (m_OpenCreationPopup)
+        if (m_OpenCreationPopup) { ImGui::OpenPopup("Create New Asset"); m_OpenCreationPopup = false; }
+        ImVec2 center = ImGui::GetMainViewport()->GetCenter();
+        ImGui::SetNextWindowPos(center, ImGuiCond_Appearing, ImVec2(0.5f, 0.5f));
+
+        if (ImGui::BeginPopupModal("Create New Asset", NULL, ImGuiWindowFlags_AlwaysAutoResize))
         {
-            ImGui::OpenPopup("Create Asset Wizard");
-            m_OpenCreationPopup = false;
-        }
+            Theme theme;
+            ImGui::Text("Enter a name for the new asset:");
+            ImGui::InputText("##assetname", m_CreationBuffer, sizeof(m_CreationBuffer));
+            if (!m_CreationErrorMessage.empty()) ImGui::TextColored(ImVec4(1, 0, 0, 1), "%s", m_CreationErrorMessage.c_str());
+            ImGui::Spacing(); ImGui::Separator(); ImGui::Spacing();
 
-        // Center the wizard
-        ImGui::SetNextWindowPos(ImGui::GetMainViewport()->GetCenter(), ImGuiCond_Appearing, ImVec2(0.5f, 0.5f));
-
-        // Modal = Blocking. Background becomes dimmed.
-        if (ImGui::BeginPopupModal("Create Asset Wizard", NULL, ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoSavedSettings))
-        {
-            Theme theme; // Access our unified colors
-
-            ImGui::Text("Create New %s", (m_PendingAssetType == AssetType::Scene ? "Scene" : "Logic Graph"));
-            ImGui::Separator();
-
-            // Location Info (Using Theme Muted Text)
-            std::string location = "Location: " + std::filesystem::relative(m_CurrentDirectory, Project::GetAssetDirectory()).string();
-            ImGui::TextColored(theme.TextMuted, "%s", location.c_str());
-            ImGui::Spacing();
-
-            // Input Field
-            // ImGuiInputTextFlags_EnterReturnsTrue allows pressing 'Enter' to confirm
-            bool enterPressed = ImGui::InputText("Filename", m_CreationBuffer, sizeof(m_CreationBuffer), ImGuiInputTextFlags_EnterReturnsTrue);
-
-            // Live Validation
-            bool isValid = true;
-            m_CreationErrorMessage = "";
-            std::string nameStr = m_CreationBuffer;
-
-            if (nameStr.empty()) {
-                isValid = false;
+            ImGui::PushStyleColor(ImGuiCol_Button, theme.AccentPrimary);
+            if (ImGui::Button("Create", ImVec2(120, 0))) {
+                std::string filename(m_CreationBuffer);
+                if (filename.empty()) m_CreationErrorMessage = "Filename cannot be empty.";
+                else { AssetManager::CreateAsset(filename, m_CurrentDirectory, m_PendingAssetType); ImGui::CloseCurrentPopup(); }
             }
-            else {
-                if (nameStr.find(' ') != std::string::npos) {
-                    m_CreationErrorMessage = "Filename cannot contain spaces.";
-                    isValid = false;
-                }
-                else if (nameStr.find_first_not_of("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_-") != std::string::npos) {
-                    m_CreationErrorMessage = "Alphanumeric, '-', and '_' only.";
-                    isValid = false;
-                }
-
-                std::string ext = ".aeth";
-                if (std::filesystem::exists(m_CurrentDirectory / (nameStr + ext))) {
-                    m_CreationErrorMessage = "File already exists!";
-                    isValid = false;
-                }
-            }
-
-            // Error Message (Red is universal, so we keep it distinct from the theme for safety)
-            if (!m_CreationErrorMessage.empty())
-            {
-                ImGui::TextColored(ImVec4(1.0f, 0.4f, 0.4f, 1.0f), "%s", m_CreationErrorMessage.c_str());
-            }
-
-            ImGui::Spacing();
-            ImGui::Separator();
-            ImGui::Spacing();
-
-            // Buttons
-            if (isValid)
-            {
-                // Valid: Use Theme Primary Accent (Lavender)
-                ImGui::PushStyleColor(ImGuiCol_Button, theme.AccentPrimary);
-                ImGui::PushStyleColor(ImGuiCol_ButtonHovered, theme.AccentSecondary);
-                ImGui::PushStyleColor(ImGuiCol_ButtonActive, theme.AccentCyan);
-            }
-            else
-            {
-                // Invalid: Use Panel Background (looks disabled/flat)
-                ImGui::PushStyleColor(ImGuiCol_Button, theme.PanelBg);
-                ImGui::PushStyleColor(ImGuiCol_ButtonHovered, theme.PanelBg);
-                ImGui::PushStyleColor(ImGuiCol_ButtonActive, theme.PanelBg);
-            }
-
-            // The "Create" Button
-            if (ImGui::Button("Create", ImVec2(120, 0)) || (isValid && enterPressed))
-            {
-                if (isValid)
-                {
-                    AssetManager::CreateAsset(m_CreationBuffer, m_CurrentDirectory, m_PendingAssetType);
-                    ImGui::CloseCurrentPopup();
-                }
-            }
-
-            ImGui::PopStyleColor(3); // Pop the 3 button colors
+            ImGui::PopStyleColor();
             ImGui::SameLine();
-
-            // The "Cancel" Button
-            if (ImGui::Button("Cancel", ImVec2(120, 0)))
-            {
-                ImGui::CloseCurrentPopup();
-            }
-
+            if (ImGui::Button("Cancel", ImVec2(120, 0))) ImGui::CloseCurrentPopup();
             ImGui::EndPopup();
         }
     }

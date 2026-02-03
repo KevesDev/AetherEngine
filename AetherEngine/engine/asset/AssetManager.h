@@ -3,6 +3,7 @@
 #include "../project/Project.h"
 #include <filesystem>
 #include <string>
+#include <vector>
 
 namespace aether {
 
@@ -20,19 +21,23 @@ namespace aether {
         static bool HasAsset(UUID handle);
         static bool HasAsset(const std::filesystem::path& filepath);
 
-        // Returns the underlying Library (for the Content Browser to list items)
         static const AssetLibrary& GetLibrary();
 
         // --- Helper ---
         static AssetType GetAssetTypeFromExtension(const std::filesystem::path& extension);
 
+        // Returns a list of all extensions that can be imported (e.g. { ".png", ".jpg" })
+        static std::vector<std::string> GetImportableExtensions();
+
         // --- Factory ---
-        // Creates a valid, stamped .aeth file and automatically registers it
         static void CreateAsset(const std::string& filename, const std::filesystem::path& directory, AssetType type);
+
+        // Generic Import: Detects file type and runs specific import logic (e.g. generates .aeth wrapper)
+        static void ImportSourceFile(const std::filesystem::path& sourcePath);
 
     private:
         static void ProcessDirectory(const std::filesystem::path& directory);
-        static void ImportAsset(const std::filesystem::path& filepath);
+        static void ImportTexture(const std::filesystem::path& sourcePath);
 
     private:
         static std::unique_ptr<AssetLibrary> s_CurrentLibrary;

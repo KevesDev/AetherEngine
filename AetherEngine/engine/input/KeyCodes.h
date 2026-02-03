@@ -28,16 +28,22 @@ namespace aether {
             Enter = 13,
             Tab = 9,
             Backspace = 8,
-            Insert = 73,
+            Insert = 1073741897,
             Delete = 127,
-            Right = 79,
-            Left = 80,
-            Down = 81,
-            Up = 82,
+            Right = 1073741903,
+            Left = 1073741904,
+            Down = 1073741905,
+            Up = 1073741906,
 
-            LeftShift = 225, // SDL Specific Scancode mapping may vary, relying on ASCII for now
-            LeftCtrl = 224,
-            LeftAlt = 226
+            // Modifiers
+            // PRESERVED NAMES (Do not change)
+            LeftShift = 1073742049,
+            LeftCtrl = 1073742048,
+            LeftAlt = 1073742050,
+
+            RightShift = 1073742053,
+            RightCtrl = 1073742052,
+            RightAlt = 1073742054
         };
     }
 

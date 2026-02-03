@@ -30,6 +30,7 @@ namespace aether {
         char Magic[4] = { 'A', 'E', 'T', 'H' }; // "AETH" Magic Number
         uint32_t Version = 1;                   // For future backward compatibility
         AssetType Type = AssetType::None;       // The actual content type
+        uint64_t AssetID = 0;                   // The persistent UUID of this asset
     };
 
     struct AssetMetadata
