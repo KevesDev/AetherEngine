@@ -34,7 +34,7 @@ int main(int argc, char* argv[])
             }
         }
 
-        aether::WindowSettings settings;
+        aether::WindowProps settings;
         settings.Title = "Aether Hub";
         settings.Width = 1280;
         settings.Height = 720;

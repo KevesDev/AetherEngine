@@ -27,8 +27,9 @@ namespace aether {
     static void SerializeEntity(json& out, Entity entity)
     {
         // 1. Identity (Mandatory for persistence)
+		// need to use uint64_t to avoid JSON number precision issues
         if (entity.HasComponent<IDComponent>()) {
-            out["EntityID"] = entity.GetComponent<IDComponent>().ID;
+            out["EntityID"] = (uint64_t)entity.GetComponent<IDComponent>().ID;
         }
         else {
             return; // Transient entity, skip.

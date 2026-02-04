@@ -1,9 +1,7 @@
 #pragma once
 
 #include "System.h"
-#include "../Log.h"
 #include "../Engine.h"
-
 #include "../../ecs/Components.h"
 #include "../../ecs/Registry.h"
 #include "../../input/Input.h"
@@ -25,36 +23,42 @@ namespace aether {
      */
     class InputSystem : public ISystem {
     public:
-        void Update(Registry& registry, float deltaTime) override {
+		// Get system name
+        const char* GetName() const override { return "InputSystem"; }
+
+        void OnUpdate(Registry& reg, float deltaTime) override {
             // Server Safety: The Server has no physical input hardware.
             // Input on the server is driven by the NetworkSystem (packet ingestion), not this system.
             if (Engine::Get().GetAppType() == ApplicationType::Server) return;
 
-            auto view = registry.view<PlayerControllerComponent>();
+            // Use standard Registry view syntax
+            auto view = reg.view<PlayerControllerComponent>();
             for (auto entity : view) {
-                const auto& controller = view.get<PlayerControllerComponent>(entity);
+                // Retrieve component via Engine API (GetComponent)
+                const auto* controller = reg.GetComponent<PlayerControllerComponent>(entity);
 
                 // 1. Validate Context
-                if (controller.ActiveMappingContext == 0) continue;
-                auto context = AssetManager::GetAsset<InputMappingContext>(controller.ActiveMappingContext);
+                if (!controller || controller->ActiveMappingContext == 0) continue;
+
+                auto context = AssetManager::GetAsset<InputMappingContext>(controller->ActiveMappingContext);
                 if (!context) continue;
 
                 // 2. Prepare Input Component
-                // using get_or_emplace ensures we don't crash on new entities
-                if (!registry.has<InputComponent>(entity)) {
-                    registry.emplace<InputComponent>(entity);
+                // Use Engine API HasComponent/AddComponent
+                if (!reg.HasComponent<InputComponent>(entity)) {
+                    reg.AddComponent<InputComponent>(entity, InputComponent{});
                 }
-                auto& inputComp = registry.get<InputComponent>(entity);
+                auto* inputComp = reg.GetComponent<InputComponent>(entity);
 
                 // 3. Frame Initialization
                 // We must clear the actions for the current tick before accumulating.
                 // This prevents "stuck" inputs from previous frames if keys are released.
-                inputComp.CurrentTick++; // Advance simulation tick (Client Authoritative step)
+                inputComp->CurrentTick++; // Advance simulation tick (Client Authoritative step)
 
                 // Get reference to the frame we are about to write
                 // Accessing the ring buffer manually here to clear it effectively
-                InputFrame& currentFrame = inputComp.InputHistory[inputComp.CurrentTick % INPUT_BUFFER_SIZE];
-                currentFrame.Tick = inputComp.CurrentTick;
+                InputFrame& currentFrame = inputComp->InputHistory[inputComp->CurrentTick % INPUT_BUFFER_SIZE];
+                currentFrame.Tick = inputComp->CurrentTick;
                 currentFrame.Clear();
 
                 // 4. Input Accumulation

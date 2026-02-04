@@ -20,10 +20,12 @@ namespace aether {
      * Defines the runtime mode of the engine.
      * - Client: Standard game with Rendering, Audio, and Input polling.
      * - Server: Headless authoritative simulation. No Window, No GPU context.
+	 * - Editor: Editing and creating projects; includes rendering and input.
      */
     enum class ApplicationType {
         Client = 0,
-        Server = 1
+        Server = 1,
+		Editor = 2
     };
 
     struct EngineSpecification {

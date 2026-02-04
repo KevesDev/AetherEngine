@@ -16,7 +16,7 @@ int main(int argc, char* argv[])
     VFS::Mount("/assets", "assets");
 
     // 1. Load Configuration
-    WindowSettings windowSettings;
+    WindowProps windowSettings;
     std::string startupScenePath;
 
     // Note the leading slash: "/assets/boot.json" matches the mount point "/assets"
