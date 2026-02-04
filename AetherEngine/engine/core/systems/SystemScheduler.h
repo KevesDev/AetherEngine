@@ -6,44 +6,41 @@
 
 namespace aether {
 
+    /*
+     * Orchestrates the execution of systems in a guaranteed order.
+     * Implements a Fixed-Step Accumulator for deterministic 60Hz simulation.
+     */
+
     class SystemScheduler {
     public:
         SystemScheduler() = default;
 
-        /**
-         * Adds a system to a specific execution group.
-         * Systems within the same group are executed in the order they are added.
-         */
         template<typename T, typename... Args>
         void AddSystem(SystemGroup group, Args&&... args) {
             m_Systems[group].push_back(std::make_unique<T>(std::forward<Args>(args)...));
         }
 
         /**
-         * Updates the simulation using a fixed timestep.
-         * Crucial for deterministic behavior on Headless Servers.
+         * Drives the fixed-step simulation clock.
+         * Ensures that Simulation and Sync stages run at a constant frequency.
          */
         void Update(Registry& reg, float variableDeltaTime) {
-            // 1. Variable Stage: Input (Always catch the latest raw input)
+            // 1. Variable Stage: Gather hardware/network input intents
             RunGroup(SystemGroup::Input, reg, variableDeltaTime);
 
-            // 2. Fixed-Step Accumulation
+            // 2. Fixed-Step Accumulation (Deterministic Logic)
             m_Accumulator += variableDeltaTime;
-
             while (m_Accumulator >= m_FixedTimeStep) {
-                // Run Simulation and Sync at a constant frequency (e.g., 60Hz)
                 RunGroup(SystemGroup::Simulation, reg, m_FixedTimeStep);
                 RunGroup(SystemGroup::Sync, reg, m_FixedTimeStep);
-
                 m_Accumulator -= m_FixedTimeStep;
             }
 
-            // 3. Variable Stage: Render (Interpolation happens here for high refresh monitors)
+            // 3. Variable Stage: Rendering and Interpolation
             RunGroup(SystemGroup::Render, reg, variableDeltaTime);
         }
 
         void SetFixedTimeStep(float seconds) { m_FixedTimeStep = seconds; }
-        float GetFixedTimeStep() const { return m_FixedTimeStep; }
 
     private:
         void RunGroup(SystemGroup group, Registry& reg, float ts) {
@@ -57,9 +54,8 @@ namespace aether {
 
     private:
         std::map<SystemGroup, std::vector<std::unique_ptr<ISystem>>> m_Systems;
-
         float m_Accumulator = 0.0f;
-        float m_FixedTimeStep = 1.0f / 60.0f; // Default 60Hz simulation
+        float m_FixedTimeStep = 1.0f / 60.0f;
     };
 
 }

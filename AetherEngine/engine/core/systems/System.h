@@ -1,27 +1,29 @@
 #pragma once
-#pragma once
-#include "../ecs/Registry.h"
+#include "../../ecs/Registry.h"
 
 namespace aether {
 
     /**
      * SystemGroup defines the rigid execution order of the engine simulation.
-     * This ensures producers always run before consumers.
+     * This ensures producers (Input) always run before consumers (Simulation/Render).
      */
     enum class SystemGroup {
-        Input,      // Gathering raw input and translating to Action Mappings
-        Simulation, // Physics, AI, and Gameplay Logic
-        Sync,       // State replication and network synchronization
-        Render      // Visual updates (Typically skipped by Headless Servers)
+        Input,      // Translating hardware intents to logical Action states
+        Simulation, // Authoritative Logic Graph execution (Server-side)
+        Sync,       // Network state replication and world synchronization
+        Render      // Visual translation and interpolation (Client-side)
     };
 
+    /**
+     * ISystem: The pure interface for all engine-level logic.
+     */
     class ISystem {
     public:
         virtual ~ISystem() = default;
 
         /**
-         * @param reg The Registry to operate on
-         * @param ts The timestep (Fixed for Simulation/Sync, Variable for Render)
+         * @param reg The active Registry containing entity data.
+         * @param ts The simulation timestep (Fixed for Sim/Sync, Variable for Render).
          */
         virtual void OnUpdate(Registry& reg, float ts) = 0;
 

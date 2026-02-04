@@ -1,38 +1,43 @@
 #pragma once
-#include "../System.h"
+#include "System.h"
 #include "../../ecs/Components.h"
 #include "../../input/Input.h"
-#include <map>
+#include "../../input/InputMappingContext.h"
 
 namespace aether {
 
-    // A mapping of logical Action Names to physical KeyCodes
-    using ActionMap = std::map<std::string, int>;
-
     /**
-     * InputSystem translates physical hardware state into logical InputComponent data.
+     * InputSystem: A generic, data-driven bridge between hardware and ECS.
+     * Translates physical states into logical data based on the provided IMC asset.
      */
     class InputSystem : public ISystem {
     public:
-        InputSystem(const ActionMap& map) : m_ActionMap(map) {}
+        InputSystem() = default;
 
+        /**
+         * Performs the input-to-action translation.
+         * The active context must be explicitly set by the engine or player controller state.
+         */
         virtual void OnUpdate(Registry& reg, float ts) override {
+            if (!m_ActiveContext) return;
+
             auto view = reg.view<PlayerControllerComponent, InputComponent>();
-
             for (auto entityID : view) {
-                auto* inputComp = reg.GetComponent<InputComponent>(entityID);
+                auto& inputComp = reg.GetComponent<InputComponent>(entityID);
 
-                // Iterate through the map to translate hardware state to logical state
-                for (auto const& [actionName, keyCode] : m_ActionMap) {
-                    inputComp->Actions[actionName] = Input::IsKeyPressed(keyCode);
+                for (const auto& mapping : m_ActiveContext->GetMappings()) {
+                    if (Input::IsKeyPressed(mapping.KeyCode)) {
+                        inputComp.ActionStates[mapping.ActionID] = 1.0f;
+                    }
                 }
             }
         }
 
+        void SetActiveContext(InputMappingContext* context) { m_ActiveContext = context; }
         virtual const char* GetName() const override { return "InputSystem"; }
 
     private:
-        ActionMap m_ActionMap;
+        InputMappingContext* m_ActiveContext = nullptr;
     };
 
 }

@@ -75,24 +75,46 @@ namespace aether {
     };
 
     /**
-     * The authoritative container for action values.
-     * Logic Graph nodes read from these maps using the ActionID from the Manifest.
-     */
+      * Authoritative buffer for action values.
+      * Logic Graph nodes query this component by ActionID to get current state.
+      * Refactored for performance using contiguous storage.
+      */
     struct InputComponent {
-        // Stores Digital (0/1) and Axis1D values
-        std::unordered_map<uint32_t, float> ActionStates;
+        struct ActionData {
+            uint32_t ActionID;
+            float Value;
+        };
 
-        // Stores Axis2D values (e.g., Mouse Delta or Joystick)
-        std::unordered_map<uint32_t, glm::vec2> Axis2DStates;
+        struct Axis2DData {
+            uint32_t ActionID;
+            glm::vec2 Value;
+        };
+
+        std::vector<ActionData> ActionStates;
+        std::vector<Axis2DData> Axis2DStates;
 
         float GetActionValue(uint32_t actionID) const {
-            auto it = ActionStates.find(actionID);
-            return it != ActionStates.end() ? it->second : 0.0f;
+            for (const auto& data : ActionStates) {
+                if (data.ActionID == actionID) return data.Value;
+            }
+            return 0.0f;
         }
 
         glm::vec2 GetAxis2DValue(uint32_t actionID) const {
-            auto it = Axis2DStates.find(actionID);
-            return it != Axis2DStates.end() ? it->second : glm::vec2(0.0f);
+            for (const auto& data : Axis2DStates) {
+                if (data.ActionID == actionID) return data.Value;
+            }
+            return glm::vec2(0.0f);
+        }
+
+        void SetActionValue(uint32_t actionID, float value) {
+            for (auto& data : ActionStates) {
+                if (data.ActionID == actionID) {
+                    data.Value = value;
+                    return;
+                }
+            }
+            ActionStates.push_back({ actionID, value });
         }
     };
 }
