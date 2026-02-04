@@ -1,18 +1,14 @@
 #include "Scene.h"
 #include "../ecs/Components.h"
-#include "../ecs/Entity.h"
-#include "../core/Log.h"
 #include "../renderer/Renderer2D.h"
-#include <glm/glm.hpp>
+#include "../ecs/Entity.h"
 
 namespace aether {
 
     Scene::Scene() {
-        AETHER_CORE_INFO("Scene System Initialized");
     }
 
     Scene::~Scene() {
-        AETHER_CORE_INFO("Scene System Shutdown");
     }
 
     Entity Scene::CreateEntity(const std::string& name) {
@@ -20,51 +16,43 @@ namespace aether {
         auto& tag = entity.AddComponent<TagComponent>();
         tag.Tag = name.empty() ? "Entity" : name;
         entity.AddComponent<TransformComponent>();
-
-        AETHER_CORE_TRACE("Created Entity: '{0}' (ID: {1})", tag.Tag, (uint32_t)entity.GetID());
         return entity;
     }
 
     void Scene::DestroyEntity(Entity entity) {
-        AETHER_ASSERT((bool)entity, "Attempted to destroy an invalid entity!");
-        m_Registry.DestroyEntity(entity);
+        m_Registry.DestroyEntity(entity.GetID());
     }
 
-    void Scene::OnUpdate(TimeStep ts, const glm::mat4& viewProjection) {
-        float dt = ts.GetSeconds();
-        if (dt > 0.1f) dt = 0.1f;
+    void Scene::OnUpdateRuntime(float ts) {
+        // TODO:
+        // 1. Scripting/AI (Future LogicGraph integration goes here)
 
-        // --- Logic Systems ---
-        // (Physics, Scripts, and other non-graphical systems run here on both Client and Server)
+        // 2. Physics (Placeholder for future PhysicsSystem)
 
-        // --- Rendering System (Client/Editor Only) ---
-#ifndef AETHER_SERVER
-        Renderer2D::BeginScene(viewProjection);
+        // 3. Rendering
+        // The View guarantees every entity yielded has both components.
+        auto view = m_Registry.view<TransformComponent, SpriteComponent>();
+        for (auto entityID : view) {
+            Entity entity = { entityID, &m_Registry };
+            auto& transform = entity.GetComponent<TransformComponent>();
+            auto& sprite = entity.GetComponent<SpriteComponent>();
 
-        auto& registry = GetRegistry();
-        auto& sprites = registry.View<SpriteComponent>();
-        auto& owners = registry.GetOwnerMap<SpriteComponent>();
+            Renderer2D::DrawQuad(transform.GetTransform(), sprite.Color);
+        }
+    }
 
-        for (size_t i = 0; i < sprites.size(); i++) {
-            EntityID id = owners.at(i);
+    void Scene::OnUpdateEditor(float ts, EditorCamera& camera) {
+        Renderer2D::BeginScene(camera);
 
-            // Refactored for Pointer Safety:
-            // We fetch the transform pointer. if the entity has a sprite but no transform, 
-            // the pointer will be null, and we safely skip drawing.
-            auto* transform = registry.GetComponent<TransformComponent>(id);
-            if (!transform) continue;
+        auto view = m_Registry.view<TransformComponent, SpriteComponent>();
+        for (auto entityID : view) {
+            Entity entity = { entityID, &m_Registry };
+            auto& transform = entity.GetComponent<TransformComponent>();
+            auto& sprite = entity.GetComponent<SpriteComponent>();
 
-            auto& sprite = sprites[i];
-
-            // Use -> access because transform is now a pointer
-            Renderer2D::DrawQuad(
-                { transform->X, transform->Y },
-                { transform->ScaleX, transform->ScaleY },
-                { sprite.R, sprite.G, sprite.B, sprite.A }
-            );
+            Renderer2D::DrawQuad(transform.GetTransform(), sprite.Color);
         }
 
         Renderer2D::EndScene();
-#endif
     }
 }
