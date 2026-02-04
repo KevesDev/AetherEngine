@@ -10,6 +10,8 @@ using json = nlohmann::json;
 namespace aether {
 
     std::unique_ptr<AssetLibrary> AssetManager::s_CurrentLibrary = nullptr;
+    std::unordered_map<UUID, std::any> AssetManager::s_AssetCache;
+    std::mutex AssetManager::s_CacheMutex;
 
     void AssetManager::Init()
     {
@@ -29,7 +31,12 @@ namespace aether {
         serializer.Serialize(libraryPath);
     }
 
-    void AssetManager::Shutdown() { s_CurrentLibrary.reset(); }
+    void AssetManager::Shutdown()
+    {
+        std::lock_guard<std::mutex> lock(s_CacheMutex);
+        s_AssetCache.clear();
+        s_CurrentLibrary.reset();
+    }
 
     std::vector<std::string> AssetManager::GetImportableExtensions() { return { ".png", ".jpg", ".jpeg" }; }
 
@@ -159,5 +166,49 @@ namespace aether {
         AssetHeader header;
         if (ReadAssetHeader(path, header)) return header.Type;
         return AssetType::None;
+    }
+
+    // --- Asset Factory Implementation ---
+    std::shared_ptr<Texture2D> AssetManager::LoadTexture2D(const std::filesystem::path& assetPath)
+    {
+        std::ifstream stream(assetPath, std::ios::binary);
+        if (!stream) {
+            AETHER_CORE_ERROR("AssetManager::LoadTexture2D - Failed to open file: {}", assetPath.string());
+            return nullptr;
+        }
+
+        // Skip header
+        AssetHeader header;
+        stream.read(reinterpret_cast<char*>(&header), sizeof(AssetHeader));
+
+        // Parse metadata
+        json meta;
+        try {
+            stream >> meta;
+        }
+        catch (const json::parse_error& e) {
+            AETHER_CORE_ERROR("AssetManager::LoadTexture2D - JSON parse error: {}", e.what());
+            return nullptr;
+        }
+
+        std::string sourceRel = meta.value("Source", "");
+        if (sourceRel.empty()) {
+            AETHER_CORE_ERROR("AssetManager::LoadTexture2D - No source file specified");
+            return nullptr;
+        }
+
+        std::filesystem::path sourcePath = Project::GetAssetDirectory() / sourceRel;
+
+        // Build TextureSpecification from metadata
+        TextureSpecification spec;
+        std::string filter = meta.value("Filter", "Linear");
+        spec.MinFilter = (filter == "Nearest") ? GL_NEAREST : GL_LINEAR;
+        spec.MagFilter = (filter == "Nearest") ? GL_NEAREST : GL_LINEAR;
+
+        std::string wrap = meta.value("Wrap", "Repeat");
+        spec.WrapS = (wrap == "Clamp") ? GL_CLAMP_TO_EDGE : GL_REPEAT;
+        spec.WrapT = (wrap == "Clamp") ? GL_CLAMP_TO_EDGE : GL_REPEAT;
+
+        return std::make_shared<Texture2D>(sourcePath.string(), spec);
     }
 }

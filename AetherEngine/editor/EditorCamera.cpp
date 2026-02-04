@@ -1,12 +1,18 @@
 #include "EditorCamera.h"
-#include "../../engine/input/Input.h"
-#include "../../engine/input/KeyCodes.h"
-#include "../../engine/renderer/CameraUtils.h"
+#include "../engine/input/Input.h"
+#include "../engine/input/KeyCodes.h"
+#include "../engine/renderer/CameraUtils.h"
 #include <algorithm> 
 
 namespace aether {
 
     EditorCamera::EditorCamera()
+    {
+        RecalculateView();
+    }
+
+    EditorCamera::EditorCamera(float fov, float aspectRatio, float nearClip, float farClip)
+        : m_FOV(fov), m_AspectRatio(aspectRatio), m_NearClip(nearClip), m_FarClip(farClip)
     {
         RecalculateView();
     }
@@ -38,7 +44,6 @@ namespace aether {
     void EditorCamera::OnEvent(Event& e)
     {
         EventDispatcher dispatcher(e);
-        // Use Correct Macro Name
         dispatcher.Dispatch<MouseScrolledEvent>(AETHER_BIND_EVENT_FN(EditorCamera::OnMouseScrolled));
     }
 

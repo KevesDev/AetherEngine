@@ -1,5 +1,8 @@
 #pragma once
 
+// Enable GLM experimental extensions BEFORE including GLM headers
+#define GLM_ENABLE_EXPERIMENTAL
+
 #include <string>
 #include <vector> 
 #include <array>
@@ -10,6 +13,7 @@
 #include <glm/gtx/quaternion.hpp>
 
 #include "../core/UUID.h"
+#include "../renderer/CameraUtils.h"
 
 namespace aether {
 
@@ -18,13 +22,6 @@ namespace aether {
 
     // --- Core Components ---
 
-    /**
-     * IDComponent
-     * * Defines the stable, unique identifier for an entity.
-     * * IMPORTANT:
-     * Unlike runtime EntityIDs (which change every run), UUIDs persist
-     * across saves and network replication. Essential for the Serializer.
-     */
     struct IDComponent {
         UUID ID;
 
@@ -45,14 +42,12 @@ namespace aether {
     };
 
     struct TransformComponent {
-        // Current Simulation State (The Truth)
         float X = 0.0f;
         float Y = 0.0f;
         float Rotation = 0.0f;
         float ScaleX = 1.0f;
         float ScaleY = 1.0f;
 
-        // Previous Simulation State (For Interpolation)
         float PrevX = 0.0f;
         float PrevY = 0.0f;
         float PrevRotation = 0.0f;
@@ -81,6 +76,43 @@ namespace aether {
         float A = 1.0f;
     };
 
+    // --- Camera Component ---
+    struct CameraComponent {
+        enum class Type { Perspective = 0, Orthographic = 1 };
+
+        Type ProjectionType = Type::Orthographic;
+
+        float PerspFOV = glm::radians(45.0f);
+        float PerspNear = 0.01f;
+        float PerspFar = 1000.0f;
+
+        float OrthoSize = 10.0f;
+        float OrthoNear = -1.0f;
+        float OrthoFar = 1.0f;
+
+        float AspectRatio = 1.778f;
+
+        bool Primary = true;
+        bool FixedAspectRatio = false;
+
+        // Runtime calculated projection
+        glm::mat4 GetProjection() const {
+            if (ProjectionType == Type::Perspective)
+                return CameraUtils::CalculatePerspective(PerspFOV, AspectRatio, PerspNear, PerspFar);
+            else
+                return CameraUtils::CalculateOrthographic(OrthoSize, AspectRatio, OrthoNear, OrthoFar);
+        }
+
+        // Legacy compatibility
+        // TODO: Probably don't need but check later
+        float OrthographicSize = 10.0f;
+        float OrthographicNear = -1.0f;
+        float OrthographicFar = 1.0f;
+        float PerspectiveFOV = glm::radians(45.0f);
+        float PerspectiveNear = 0.01f;
+        float PerspectiveFar = 1000.0f;
+    };
+
     // --- Gameplay & Input Components ---
 
     struct LogicGraphComponent {
@@ -90,7 +122,7 @@ namespace aether {
 
     struct PlayerControllerComponent {
         uint32_t PlayerIndex = 0;
-        uint64_t ActiveMappingContext = 0; // AssetHandle
+        uint64_t ActiveMappingContext = 0;
     };
 
     struct InputFrame {

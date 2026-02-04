@@ -10,9 +10,20 @@ namespace aether {
         SetContext(context);
     }
 
+    SceneHierarchyPanel::SceneHierarchyPanel(const std::shared_ptr<Scene>& context)
+    {
+        SetContext(context);
+    }
+
     void SceneHierarchyPanel::SetContext(Scene* context)
     {
         m_Context = context;
+        m_SelectionContext = {};
+    }
+
+    void SceneHierarchyPanel::SetContext(const std::shared_ptr<Scene>& context)
+    {
+        m_Context = context.get();
         m_SelectionContext = {};
     }
 
@@ -29,15 +40,24 @@ namespace aether {
         {
             auto& registry = m_Context->GetRegistry();
 
-            auto& relationships = registry.View<RelationshipComponent>();
-            auto& ownerMap = registry.GetOwnerMap<RelationshipComponent>();
-
-            for (size_t i = 0; i < relationships.size(); i++)
+            // Iterate all entities with IDComponent
+            auto view = registry.view<IDComponent>();
+            for (auto entityID : view)
             {
-                if (relationships[i].Parent == NULL_ENTITY)
+                Entity entity{ entityID, &registry };
+
+                // Only render root entities (no parent)
+                if (entity.HasComponent<RelationshipComponent>())
                 {
-                    EntityID entityID = ownerMap.at(i);
-                    Entity entity{ entityID, &registry };
+                    auto& rel = entity.GetComponent<RelationshipComponent>();
+                    if (rel.Parent == NULL_ENTITY)
+                    {
+                        DrawEntityNode(entity);
+                    }
+                }
+                else
+                {
+                    // Entity without relationship is implicitly a root
                     DrawEntityNode(entity);
                 }
             }
@@ -60,14 +80,19 @@ namespace aether {
         ImGuiTreeNodeFlags flags = ((m_SelectionContext == entity) ? ImGuiTreeNodeFlags_Selected : 0) | ImGuiTreeNodeFlags_OpenOnArrow;
         flags |= ImGuiTreeNodeFlags_SpanAvailWidth;
 
-        auto& rc = entity.GetComponent<RelationshipComponent>();
-        if (rc.FirstChild == NULL_ENTITY)
+        bool hasChildren = false;
+        if (entity.HasComponent<RelationshipComponent>())
+        {
+            auto& rc = entity.GetComponent<RelationshipComponent>();
+            hasChildren = (rc.FirstChild != NULL_ENTITY);
+        }
+
+        if (!hasChildren)
         {
             flags |= ImGuiTreeNodeFlags_Leaf;
         }
 
-        // Cast to uintptr_t first to avoid pointer truncation warning on 64-bit
-        bool opened = ImGui::TreeNodeEx((void*)(uintptr_t)entity.GetID(), flags, tag.c_str());
+        bool opened = ImGui::TreeNodeEx((void*)(uintptr_t)entity.GetID(), flags, "%s", tag.c_str());
 
         if (ImGui::IsItemClicked())
         {
@@ -85,12 +110,20 @@ namespace aether {
 
         if (opened)
         {
-            EntityID childID = rc.FirstChild;
-            while (childID != NULL_ENTITY)
+            if (entity.HasComponent<RelationshipComponent>())
             {
-                Entity child{ childID, entity.GetRegistry() };
-                DrawEntityNode(child);
-                childID = child.GetComponent<RelationshipComponent>().NextSibling;
+                auto& rc = entity.GetComponent<RelationshipComponent>();
+                EntityID childID = rc.FirstChild;
+                while (childID != NULL_ENTITY)
+                {
+                    Entity child{ childID, entity.GetRegistry() };
+                    DrawEntityNode(child);
+
+                    if (child.HasComponent<RelationshipComponent>())
+                        childID = child.GetComponent<RelationshipComponent>().NextSibling;
+                    else
+                        break;
+                }
             }
 
             ImGui::TreePop();
