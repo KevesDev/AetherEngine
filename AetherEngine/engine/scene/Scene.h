@@ -1,6 +1,6 @@
 #pragma once
 #include "../ecs/Registry.h"
-#include "../editor/EditorCamera.h"
+#include "../../editor/EditorCamera.h"
 
 namespace aether {
 

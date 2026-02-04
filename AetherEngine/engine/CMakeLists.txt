@@ -19,6 +19,7 @@ add_subdirectory(ecs)
 add_subdirectory(renderer)
 add_subdirectory(project)
 add_subdirectory(asset)
+#add_subdirectory(systems)
 
 # 3. Link ImGui, SDL, OpenGL, GLAD, AND GLM to the whole engine
 if (TARGET SDL2::SDL2)
