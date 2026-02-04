@@ -3,6 +3,7 @@
 #include "Config.h"
 #include "EngineVersion.h"
 #include "../input/Input.h"
+#include "../renderer/Renderer2D.h"
 
 // Systems Infrastructure
 #include "systems/SystemRegistry.h"
@@ -26,7 +27,8 @@ namespace aether {
         Log::Init();
 
         // Initialize Configuration
-        Config::Init();
+		// TODO: Check if needed - Config has LoadBootConfig called from editor/client entrypoints.
+        //Config::Init();
 
         // ------------------------------------------------------------
         // Core System Registration
@@ -72,8 +74,8 @@ namespace aether {
             // Calculate Delta Time
             // In Phase 5, this will drive the Fixed-Step Scheduler accumulator.
             AetherTime::Update();
-            float time = (float)AetherTime::GetTime();
-            Timestep timestep = time - m_LastFrameTime;
+			float time = (float)AetherTime::DeltaTime();
+            TimeStep timestep = time - m_LastFrameTime;
             m_LastFrameTime = time;
 
             // 1. Core Window/Input Update

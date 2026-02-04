@@ -63,10 +63,11 @@ namespace aether {
             auto system = SystemRegistry::Create(systemName);
             if (system) {
                 // Determine System Group
-                // In the future, systems will self-report their group.
-                SystemGroup group = SystemGroup::Logic;
+                // TODO: systems should self-report their group.
+                SystemGroup group = SystemGroup::Simulation;
                 if (systemName == "InputSystem") group = SystemGroup::Input;
 
+                // Transfers ownership to the Scheduler (Data-Driven Path)
                 m_Scheduler.AddSystem(group, std::move(system));
             }
         }

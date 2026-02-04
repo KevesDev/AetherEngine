@@ -2,33 +2,50 @@
 #include "System.h"
 #include <vector>
 #include <memory>
-#include <map>
+#include <array>
 
 namespace aether {
 
-    /*
+    /**
+     * SystemScheduler
      * Orchestrates the execution of systems in a guaranteed order.
-     * Implements a Fixed-Step Accumulator for deterministic 60Hz simulation.
+     * * ARCHITECTURE NOTE:
+     * This class uses a Fixed-Step Accumulator for deterministic 60Hz simulation.
+     * Storage is optimized using std::array for O(1) group lookup during the hot loop.
      */
-
     class SystemScheduler {
     public:
         SystemScheduler() = default;
 
-        template<typename T, typename... Args>
-        void AddSystem(SystemGroup group, Args&&... args) {
-            m_Systems[group].push_back(std::make_unique<T>(std::forward<Args>(args)...));
-        }
+        // -------------------------------------------------------------------------
+        // Core API: Runtime Injection
+        // -------------------------------------------------------------------------
 
         /**
-         * Drives the fixed-step simulation clock.
-         * Ensures that Simulation and Sync stages run at a constant frequency.
+         * Takes ownership of a pre-created system and schedules it.
+         * Primary path for Data-Driven systems (e.g., created via SystemRegistry from scene files).
          */
+        void AddSystem(SystemGroup group, std::unique_ptr<ISystem> system) {
+            if (system) {
+                size_t index = static_cast<size_t>(group);
+                if (index < GroupCount) {
+                    m_Systems[index].push_back(std::move(system));
+                }
+            }
+        }
+
+
+        // -------------------------------------------------------------------------
+        // Execution Pipeline
+        // -------------------------------------------------------------------------
+
         void Update(Registry& reg, float variableDeltaTime) {
             // 1. Variable Stage: Gather hardware/network input intents
+            // Must run every frame to prevent input lag.
             RunGroup(SystemGroup::Input, reg, variableDeltaTime);
 
             // 2. Fixed-Step Accumulation (Deterministic Logic)
+            // Simulates physics/gameplay at a locked 60Hz regardless of framerate.
             m_Accumulator += variableDeltaTime;
             while (m_Accumulator >= m_FixedTimeStep) {
                 RunGroup(SystemGroup::Simulation, reg, m_FixedTimeStep);
@@ -37,6 +54,7 @@ namespace aether {
             }
 
             // 3. Variable Stage: Rendering and Interpolation
+            // Interpolates state between fixed steps for smooth visuals.
             RunGroup(SystemGroup::Render, reg, variableDeltaTime);
         }
 
@@ -44,18 +62,19 @@ namespace aether {
 
     private:
         void RunGroup(SystemGroup group, Registry& reg, float ts) {
-            auto it = m_Systems.find(group);
-            if (it != m_Systems.end()) {
-                for (auto& system : it->second) {
-                    system->OnUpdate(reg, ts);
-                }
+            // Direct array access (O(1)) avoids the overhead of map lookups in the hot loop.
+            size_t index = static_cast<size_t>(group);
+            for (auto& system : m_Systems[index]) {
+                system->OnUpdate(reg, ts);
             }
         }
 
     private:
-        std::map<SystemGroup, std::vector<std::unique_ptr<ISystem>>> m_Systems;
+        // SystemGroup has 4 enum values. We use std::array for cache locality and speed.
+        static constexpr size_t GroupCount = 4;
+        std::array<std::vector<std::unique_ptr<ISystem>>, GroupCount> m_Systems;
+
         float m_Accumulator = 0.0f;
         float m_FixedTimeStep = 1.0f / 60.0f;
     };
-
 }

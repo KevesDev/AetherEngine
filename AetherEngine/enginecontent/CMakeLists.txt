@@ -1,5 +1,6 @@
 ﻿add_executable(aether_EngineContent
     shaders/FlatColor.glsl
+    shaders/Texture.glsl
 )
 
 # Link against the Unified Engine Library

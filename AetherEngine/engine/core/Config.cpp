@@ -11,8 +11,7 @@ using json = nlohmann::json;
 
 namespace aether {
 
-    bool Config::LoadBootConfig(const std::string& filepath, WindowSettings& outSettings, std::string& outStartupScene)
-    {
+    bool Config::LoadBootConfig(const std::string& filepath, WindowProps& outSettings, std::string& outStartupScene) {
         std::string content;
 
         // 1. Try VFS (Virtual File System)
@@ -73,8 +72,7 @@ namespace aether {
         }
     }
 
-    void Config::SaveBootConfig(const std::string& filepath, const WindowSettings& settings, const std::string& startupScene)
-    {
+    void Config::SaveBootConfig(const std::string& filepath, const WindowProps& settings, const std::string& startupScene) {
         json configJson;
         configJson["Window"]["Title"] = settings.Title;
         configJson["Window"]["Width"] = settings.Width;

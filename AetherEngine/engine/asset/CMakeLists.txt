@@ -9,10 +9,14 @@ set(ASSET_SOURCES
 # Create the object library without duplicate source entries
 add_library(aether_asset OBJECT ${ASSET_SOURCES})
 
+# Use PROJECT_SOURCE_DIR (defined in engine/CMakeLists.txt) to get the correct path to 'engine'
 target_include_directories(aether_asset PUBLIC 
     ${CMAKE_CURRENT_SOURCE_DIR}
-    ${CMAKE_SOURCE_DIR}/engine
-    ${CMAKE_SOURCE_DIR}/engine/vendor
+    ${PROJECT_SOURCE_DIR}
+    ${PROJECT_SOURCE_DIR}/vendor
 )
 
-target_link_libraries(aether_asset PUBLIC aether_core)
+# Link dependencies
+# 1. We link 'glad' so that aether_asset inherits the include path for glad.h
+# 2. We DO NOT link 'aether_core' because it is not a standalone library target
+target_link_libraries(aether_asset PUBLIC glad)
