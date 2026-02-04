@@ -1,11 +1,21 @@
 #pragma once
+
 #include "../core/UUID.h"
 #include <filesystem>
 #include <string>
 
 namespace aether {
 
-    // Locking IDs to prevent binary breakage when inserting new types.
+    using AssetHandle = UUID;
+
+    /**
+     * AssetType
+     * * Defines the specific runtime type of an asset.
+     * * CRITICAL ARCHITECTURE NOTE:
+     * These IDs are serialized into binary headers.
+     * DO NOT reorder or insert values in the middle. Always append new types.
+     * Explicit assignment is used here to guarantee stability against refactors.
+     */
     enum class AssetType : uint16_t
     {
         None = 0,
@@ -18,15 +28,19 @@ namespace aether {
         LogicGraph = 5,
 
         // --- Imported Media Assets ---
-        // (Must keep these IDs stable to load existing .aeth files)
         Texture2D = 6,
         Audio = 7,
         Font = 8,
 
-        // --- New Additions (Append Only) ---
+        // --- Mappings ---
         InputMappingContext = 9
     };
 
+    /**
+     * AssetHeader
+     * * The binary prefix for all .aeth files.
+     * Validates file integrity and type before loading the full payload.
+     */
     struct AssetHeader
     {
         char Magic[4] = { 'A', 'E', 'T', 'H' };
@@ -35,9 +49,14 @@ namespace aether {
         uint64_t AssetID = 0;
     };
 
+    /**
+     * AssetMetadata
+     * * Runtime registry data for an asset.
+     * Used by the AssetManager to look up files without loading them.
+     */
     struct AssetMetadata
     {
-        UUID Handle;
+        AssetHandle Handle;
         AssetType Type = AssetType::None;
         std::filesystem::path FilePath;
 

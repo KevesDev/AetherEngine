@@ -1,242 +1,225 @@
 #include "SceneSerializer.h"
+
 #include "../ecs/Entity.h"
 #include "../ecs/Components.h"
-#include "../core/VFS.h"
 #include "../core/Log.h"
-#include "../asset/AssetMetadata.h" // Required for AssetHeader
+#include "../core/UUID.h"
 
-// Vendor Include
-#include "../vendor/json.hpp" 
+#include "../vendor/json.hpp"
+
 #include <fstream>
+#include <filesystem>
 #include <sstream>
-
-using json = nlohmann::json;
 
 namespace aether {
 
-    SceneSerializer::SceneSerializer(Scene* scene)
+    using json = nlohmann::json;
+
+    SceneSerializer::SceneSerializer(const std::shared_ptr<Scene>& scene)
         : m_Scene(scene)
     {
     }
 
-    // Helper to serialize an individual entity safely
-    static void SerializeEntity(json& outJson, Entity entity)
+    /**
+     * Serializes a single entity and its components to a JSON object.
+     * Note: Entities must possess an IDComponent to be considered persistent.
+     */
+    static void SerializeEntity(json& out, Entity entity)
     {
-        // 1. Tag Component (Required)
-        if (entity.HasComponent<TagComponent>())
-        {
-            outJson["Tag"] = entity.GetComponent<TagComponent>().Tag;
+        // 1. Identity (Mandatory for persistence)
+        if (entity.HasComponent<IDComponent>()) {
+            out["EntityID"] = entity.GetComponent<IDComponent>().ID;
+        }
+        else {
+            return; // Transient entity, skip.
         }
 
-        // 2. Transform Component
-        if (entity.HasComponent<TransformComponent>())
-        {
+        // 2. Metadata
+        if (entity.HasComponent<TagComponent>()) {
+            out["TagComponent"] = {
+                { "Tag", entity.GetComponent<TagComponent>().Tag }
+            };
+        }
+
+        // 3. Transform (Spatial State)
+        if (entity.HasComponent<TransformComponent>()) {
             auto& tc = entity.GetComponent<TransformComponent>();
-            outJson["Transform"] = {
-                { "X", tc.X },
-                { "Y", tc.Y },
+            out["TransformComponent"] = {
+                { "Translation", { tc.X, tc.Y } },
                 { "Rotation", tc.Rotation },
-                { "ScaleX", tc.ScaleX },
-                { "ScaleY", tc.ScaleY }
+                { "Scale", { tc.ScaleX, tc.ScaleY } }
             };
         }
 
-        // 3. Sprite Component
-        if (entity.HasComponent<SpriteComponent>())
-        {
+        // 4. Rendering
+        if (entity.HasComponent<SpriteComponent>()) {
             auto& sc = entity.GetComponent<SpriteComponent>();
-            outJson["Sprite"] = {
-                { "R", sc.R },
-                { "G", sc.G },
-                { "B", sc.B },
-                { "A", sc.A }
+            out["SpriteComponent"] = {
+                { "Color", { sc.R, sc.G, sc.B, sc.A } }
             };
         }
 
-        // 4. Camera Component
+        // 5. Camera (Pure Data)
+        // Serializes the flat data structure defined in Components.h.
+        // Projection matrices are recalculated at runtime by the Scene/Renderer.
         if (entity.HasComponent<CameraComponent>()) {
             auto& cc = entity.GetComponent<CameraComponent>();
-            outJson["CameraComponent"] = {
+            out["CameraComponent"] = {
                 { "ProjectionType", (int)cc.ProjectionType },
-                { "PerspectiveFOV", cc.PerspectiveFOV },
-                { "PerspectiveNear", cc.PerspectiveNear },
-                { "PerspectiveFar", cc.PerspectiveFar },
-                { "OrthographicSize", cc.OrthographicSize },
-                { "OrthographicNear", cc.OrthographicNear },
-                { "OrthographicFar", cc.OrthographicFar },
+                { "PerspectiveFOV", cc.PerspFOV },
+                { "PerspectiveNear", cc.PerspNear },
+                { "PerspectiveFar", cc.PerspFar },
+                { "OrthographicSize", cc.OrthoSize },
+                { "OrthographicNear", cc.OrthoNear },
+                { "OrthographicFar", cc.OrthoFar },
                 { "Primary", cc.Primary },
                 { "FixedAspectRatio", cc.FixedAspectRatio }
             };
         }
 
-        // 5. Relationship Component
-        if (entity.HasComponent<RelationshipComponent>()) {
-            auto& rc = entity.GetComponent<RelationshipComponent>();
-            outJson["Relationship"] = {
-                { "Parent", rc.Parent },
-                { "FirstChild", rc.FirstChild },
-                { "NextSibling", rc.NextSibling },
-                { "PrevSibling", rc.PreviousSibling },
-                { "ChildrenCount", rc.ChildrenCount }
+        // 6. Gameplay / Input
+        if (entity.HasComponent<PlayerControllerComponent>()) {
+            auto& pcc = entity.GetComponent<PlayerControllerComponent>();
+            out["PlayerControllerComponent"] = {
+                { "PlayerIndex", pcc.PlayerIndex },
+                { "ActiveMappingContext", pcc.ActiveMappingContext }
             };
         }
     }
 
-    void SceneSerializer::Serialize(const std::string& filepath)
+    void SceneSerializer::Serialize(const std::filesystem::path& filepath)
     {
-        json sceneJson;
-        sceneJson["Scene"] = "Untitled";
-        sceneJson["Entities"] = json::array();
+        std::ofstream fout(filepath);
+        if (fout.is_open()) {
+            SerializeToStream(fout);
+        }
+        else {
+            AETHER_CORE_ERROR("SceneSerializer: Could not open file '{0}' for writing.", filepath.string());
+        }
+    }
 
-        Registry& registry = m_Scene->GetRegistry();
+    bool SceneSerializer::Deserialize(const std::filesystem::path& filepath)
+    {
+        std::ifstream fin(filepath);
+        if (!fin.is_open()) {
+            AETHER_CORE_ERROR("SceneSerializer: Could not open file '{0}' for reading.", filepath.string());
+            return false;
+        }
+        return DeserializeFromStream(fin);
+    }
 
-        auto& tags = registry.View<TagComponent>();
-        auto& ownerMap = registry.GetOwnerMap<TagComponent>();
+    void SceneSerializer::SerializeToStream(std::ostream& output)
+    {
+        json out = json::object();
+        out["Scene"] = "Untitled";
 
-        for (size_t i = 0; i < tags.size(); i++)
+        // 1. Serialize System Configuration
+        out["Systems"] = m_Scene->GetSystemConfigs();
+
+        // 2. Serialize Entities
+        out["Entities"] = json::array();
+
+        // Use IDComponent view to iterate all persistent entities.
+        // IDComponent is the authoritative flag for "Saved to Disk".
+        auto view = m_Scene->GetRegistry().view<IDComponent>();
+        for (auto entityID : view)
         {
-            EntityID id = ownerMap.at(i);
-
-            // Pass the Registry pointer
-            Entity entity(id, &registry);
+            // Verify Entity Construction:
+            // Entity.h constructor takes (EntityID, Registry*).
+            // We pass the registry from the Scene.
+            Entity entity = { entityID, &m_Scene->GetRegistry() };
 
             if (!entity) continue;
 
-            json entityJson;
-            SerializeEntity(entityJson, entity);
-            sceneJson["Entities"].push_back(entityJson);
+            json e = json::object();
+            SerializeEntity(e, entity);
+
+            // Only append if serialization was successful (has ID)
+            if (e.contains("EntityID")) {
+                out["Entities"].push_back(e);
+            }
         }
 
-        std::string jsonDump = sceneJson.dump(4); // Pretty print
-
-        // --- SECURITY: Write Binary Header First ---
-        std::ofstream fout(filepath, std::ios::binary);
-        if (!fout)
-        {
-            AETHER_CORE_ERROR("SceneSerializer: Could not create file '{}'", filepath);
-            return;
-        }
-
-        AssetHeader header;
-        header.Type = AssetType::Scene; // Validates this file as a Scene
-
-        // 1. Write the Header
-        fout.write(reinterpret_cast<char*>(&header), sizeof(AssetHeader));
-
-        // 2. Write the JSON body
-        fout.write(jsonDump.c_str(), jsonDump.size());
-
-        fout.close();
-        AETHER_CORE_INFO("Serialized Scene (Secured) to '{0}'", filepath);
+        output << out.dump(4);
     }
 
-    void SceneSerializer::Deserialize(const std::string& filepath)
+    bool SceneSerializer::DeserializeFromStream(std::istream& input)
     {
-        std::ifstream stream(filepath, std::ios::binary);
-        if (!stream)
-        {
-            AETHER_CORE_ERROR("SceneSerializer: Could not open file '{}'", filepath);
-            return;
-        }
-
-        // --- SECURITY: Verify Header ---
-        AssetHeader header;
-        stream.read(reinterpret_cast<char*>(&header), sizeof(AssetHeader));
-
-        bool isValid = true;
-        if (stream.gcount() != sizeof(AssetHeader)) isValid = false;
-
-        // Check Magic "AETH"
-        if (header.Magic[0] != 'A' || header.Magic[1] != 'E' ||
-            header.Magic[2] != 'T' || header.Magic[3] != 'H') isValid = false;
-
-        // Check Type
-        if (header.Type != AssetType::Scene) isValid = false;
-
-        if (!isValid)
-        {
-            AETHER_CORE_ERROR("SceneSerializer: Security Violation - Invalid or Corrupted Scene File: '{}'", filepath);
-            return;
-        }
-
-        // Read the rest of the file (JSON body)
-        std::stringstream ss;
-        ss << stream.rdbuf();
-
-        json sceneJson;
+        json data;
         try {
-            sceneJson = json::parse(ss.str());
+            input >> data;
         }
-        catch (json::parse_error& e) {
-            AETHER_CORE_ERROR("SceneSerializer: Failed to parse JSON body: {}", e.what());
-            return;
+        catch (const std::exception& e) {
+            AETHER_CORE_ERROR("SceneSerializer: JSON Parse Error: {0}", e.what());
+            return false;
         }
 
-        auto entities = sceneJson["Entities"];
-        if (entities.is_array())
-        {
+        // 1. Load System Configuration
+        if (data.contains("Systems") && data["Systems"].is_array()) {
+            for (auto& sys : data["Systems"]) {
+                m_Scene->AddSystemConfig(sys.get<std::string>());
+            }
+        }
+
+        // 2. Load Entities
+        auto entities = data["Entities"];
+        if (entities.is_array()) {
             for (auto& entityJson : entities) {
-                std::string name = entityJson["Tag"];
-                Entity deserializedEntity = m_Scene->CreateEntity(name);
+                uint64_t uuidInt = entityJson.value("EntityID", 0);
+                if (uuidInt == 0) continue;
+
+                std::string name;
+                if (!entityJson["TagComponent"].is_null())
+                    name = entityJson["TagComponent"]["Tag"];
+
+                // Create Entity with stable UUID (Preserves relationships)
+                Entity deserializedEntity = m_Scene->CreateEntityWithUUID(UUID(uuidInt), name);
 
                 // Transform
-                if (entityJson.contains("Transform"))
-                {
-                    auto& tJson = entityJson["Transform"];
-                    if (tJson.is_object()) {
-                        auto& tc = deserializedEntity.GetComponent<TransformComponent>();
-                        tc.X = tJson.value("X", 0.0f);
-                        tc.Y = tJson.value("Y", 0.0f);
-                        tc.Rotation = tJson.value("Rotation", 0.0f);
-                        tc.ScaleX = tJson.value("ScaleX", 100.0f);
-                        tc.ScaleY = tJson.value("ScaleY", 100.0f);
-                    }
+                if (!entityJson["TransformComponent"].is_null()) {
+                    auto& tc = deserializedEntity.GetComponent<TransformComponent>();
+                    auto& t = entityJson["TransformComponent"];
+                    tc.X = t["Translation"][0]; tc.Y = t["Translation"][1];
+                    tc.Rotation = t["Rotation"];
+                    tc.ScaleX = t["Scale"][0]; tc.ScaleY = t["Scale"][1];
+
+                    // Initialize previous state to current state to prevent interpolation artifacts
+                    tc.PrevX = tc.X;
+                    tc.PrevY = tc.Y;
+                    tc.PrevRotation = tc.Rotation;
                 }
 
                 // Sprite
-                if (entityJson.contains("Sprite"))
-                {
-                    auto& sJson = entityJson["Sprite"];
-                    if (sJson.is_object()) {
-                        auto& sc = deserializedEntity.AddComponent<SpriteComponent>();
-                        sc.R = sJson.value("R", 1.0f);
-                        sc.G = sJson.value("G", 1.0f);
-                        sc.B = sJson.value("B", 1.0f);
-                        sc.A = sJson.value("A", 1.0f);
-                    }
+                if (!entityJson["SpriteComponent"].is_null()) {
+                    auto& sc = deserializedEntity.AddComponent<SpriteComponent>();
+                    auto& c = entityJson["SpriteComponent"]["Color"];
+                    sc.R = c[0]; sc.G = c[1]; sc.B = c[2]; sc.A = c[3];
                 }
 
                 // Camera
-                if (entityJson.contains("CameraComponent")) {
-                    auto& cJson = entityJson["CameraComponent"];
-                    if (cJson.is_object()) {
-                        auto& cc = deserializedEntity.AddComponent<CameraComponent>();
-                        cc.ProjectionType = (CameraComponent::Type)cJson.value("ProjectionType", (int)CameraComponent::Type::Orthographic);
-                        cc.PerspectiveFOV = cJson.value("PerspectiveFOV", glm::radians(45.0f));
-                        cc.PerspectiveNear = cJson.value("PerspectiveNear", 0.01f);
-                        cc.PerspectiveFar = cJson.value("PerspectiveFar", 1000.0f);
-                        cc.OrthographicSize = cJson.value("OrthographicSize", 10.0f);
-                        cc.OrthographicNear = cJson.value("OrthographicNear", -1.0f);
-                        cc.OrthographicFar = cJson.value("OrthographicFar", 1.0f);
-                        cc.Primary = cJson.value("Primary", true);
-                        cc.FixedAspectRatio = cJson.value("FixedAspectRatio", false);
-                    }
+                if (!entityJson["CameraComponent"].is_null()) {
+                    auto& cc = deserializedEntity.AddComponent<CameraComponent>();
+                    auto& c = entityJson["CameraComponent"];
+                    cc.ProjectionType = (CameraComponent::Type)c["ProjectionType"];
+                    cc.PerspFOV = c["PerspectiveFOV"];
+                    cc.PerspNear = c["PerspectiveNear"];
+                    cc.PerspFar = c["PerspectiveFar"];
+                    cc.OrthoSize = c["OrthographicSize"];
+                    cc.OrthoNear = c["OrthographicNear"];
+                    cc.OrthoFar = c["OrthographicFar"];
+                    cc.Primary = c["Primary"];
+                    cc.FixedAspectRatio = c["FixedAspectRatio"];
                 }
 
-                // Hierarchy
-                if (entityJson.contains("Relationship")) {
-                    auto& rJson = entityJson["Relationship"];
-                    if (rJson.is_object()) {
-                        auto& rc = deserializedEntity.AddComponent<RelationshipComponent>();
-                        rc.Parent = rJson.value("Parent", (EntityID)NULL_ENTITY);
-                        rc.FirstChild = rJson.value("FirstChild", (EntityID)NULL_ENTITY);
-                        rc.NextSibling = rJson.value("NextSibling", (EntityID)NULL_ENTITY);
-                        rc.PreviousSibling = rJson.value("PrevSibling", (EntityID)NULL_ENTITY);
-                        rc.ChildrenCount = rJson.value("ChildrenCount", (size_t)0);
-                    }
+                // Player Controller
+                if (!entityJson["PlayerControllerComponent"].is_null()) {
+                    auto& pcc = deserializedEntity.AddComponent<PlayerControllerComponent>();
+                    pcc.PlayerIndex = entityJson["PlayerControllerComponent"]["PlayerIndex"];
+                    pcc.ActiveMappingContext = entityJson["PlayerControllerComponent"]["ActiveMappingContext"];
                 }
             }
         }
-        AETHER_CORE_INFO("Deserialized Scene (Verified) from '{0}'", filepath);
+
+        return true;
     }
 }

@@ -1,186 +1,128 @@
 #include "EditorLayer.h"
-#include "../../engine/core/Engine.h" 
-#include "../../engine/scene/World.h"
-#include "../../engine/core/Theme.h"
-#include "../../engine/project/Project.h"
-#include "../../engine/project/ProjectSerializer.h"
-#include "../../engine/asset/AssetManager.h"
-#include "../../engine/input/Input.h"       
-#include "../../engine/input/KeyCodes.h"    
-#include "../EditorResources.h"
-#include "../panels/TextureViewerPanel.h"
-#include "../commands/CommandHistory.h"     
+#include <imgui/imgui.h>
 
-#include <imgui.h>
-#include <imgui_internal.h>
-#include <filesystem>
-#include <glad/glad.h>
+#include "aether/scene/SceneSerializer.h"
+#include "aether/utils/PlatformUtils.h"
+#include "aether/math/Math.h"
+
+#include <glm/gtc/matrix_transform.hpp>
+#include <glm/gtc/type_ptr.hpp>
 
 namespace aether {
 
-    EditorLayer::EditorLayer() : Layer("EditorLayer") {}
+    EditorLayer::EditorLayer()
+        : Layer("EditorLayer"), m_EditorCamera(30.0f, 1.778f, 0.1f, 1000.0f)
+    {
+    }
 
     void EditorLayer::OnAttach()
     {
-        if (!ImGui::GetCurrentContext()) {
-            AETHER_CORE_ERROR("EditorLayer attached but ImGui Context is missing!");
-            AETHER_ASSERT(false, "ImGui Context Missing");
-        }
+        // Load default texture for generic use
+        m_CheckerboardTexture = AssetManager::GetAsset<Texture2D>("assets/textures/T_checkerboard.png");
 
-        // Ensure events propagate through ImGuiLayer to this layer
-        Engine::Get().GetImGuiLayer()->SetBlockEvents(false);
-
-        Theme theme;
-        ThemeManager::ApplyTheme(theme);
-
-        auto settingsDir = Project::GetSettingsDirectory();
-        if (!std::filesystem::exists(settingsDir)) {
-            std::filesystem::create_directories(settingsDir);
-        }
-
-        m_IniFilePath = (settingsDir / "editor.ini").string();
-        ImGui::GetIO().IniFilename = m_IniFilePath.c_str();
-        ImGui::LoadIniSettingsFromDisk(m_IniFilePath.c_str());
-
-        m_ConfigFilePath = (settingsDir / "editor_config.json").string();
-        LoadSettings();
-
-        std::string title = Project::GetActiveConfig().Name + " - Aether Editor";
-        Engine::Get().GetWindow().SetTitle(title);
-
+        // Initialize Framebuffer
+        // We use a high-precision format for the entity ID attachment (RED_INTEGER)
         FramebufferSpecification fbSpec;
+        fbSpec.Attachments = { FramebufferTextureFormat::RGBA8, FramebufferTextureFormat::RED_INTEGER, FramebufferTextureFormat::Depth };
         fbSpec.Width = 1280;
         fbSpec.Height = 720;
-        m_Framebuffer = Framebuffer::Create(fbSpec);
+        m_Framebuffer = std::make_shared<Framebuffer>(fbSpec);
 
-        EditorResources::Init();
-        AssetManager::Init();
+        // Initialize Scene
+        m_ActiveScene = std::make_shared<Scene>();
 
-        m_ContentBrowserPanel.SetOnAssetOpenedCallback([this](const std::filesystem::path& path)
-            {
-                OpenAsset(path);
-            });
-
-        AETHER_CORE_INFO("Editor Initialized. Layout: {}", m_IniFilePath);
+        // Connect Panels
+        m_SceneHierarchyPanel.SetContext(m_ActiveScene);
     }
 
     void EditorLayer::OnDetach()
     {
-        if (ImGui::GetCurrentContext()) {
-            ImGui::SaveIniSettingsToDisk(ImGui::GetIO().IniFilename);
-        }
-        SaveSettings();
-        AssetManager::Shutdown();
-        EditorResources::Shutdown();
     }
 
-    void EditorLayer::LoadSettings()
+    void EditorLayer::OnUpdate(Timestep ts)
     {
-        m_Settings.Deserialize(m_ConfigFilePath);
-        m_ContentBrowserPanel.SetShowRawAssets(m_Settings.ShowRawAssets);
-    }
-
-    void EditorLayer::SaveSettings()
-    {
-        m_Settings.Serialize(m_ConfigFilePath);
-    }
-
-    void EditorLayer::OnUpdate(TimeStep ts)
-    {
-        if (!m_Framebuffer) return;
-
+        // -------------------------------------------------------------------------
+        // 1. Viewport Sizing & Framebuffer Management
+        // -------------------------------------------------------------------------
         if (FramebufferSpecification spec = m_Framebuffer->GetSpecification();
             m_ViewportSize.x > 0.0f && m_ViewportSize.y > 0.0f &&
-            (spec.Width != (uint32_t)m_ViewportSize.x || spec.Height != (uint32_t)m_ViewportSize.y))
+            (spec.Width != m_ViewportSize.x || spec.Height != m_ViewportSize.y))
         {
             m_Framebuffer->Resize((uint32_t)m_ViewportSize.x, (uint32_t)m_ViewportSize.y);
             m_EditorCamera.SetViewportSize(m_ViewportSize.x, m_ViewportSize.y);
+
+            // ECO-001: Explicitly inform Scene of the new aspect ratio.
+            // The Scene does not access the Window or EditorCamera directly.
+            m_ActiveScene->OnViewportResize((uint32_t)m_ViewportSize.x, (uint32_t)m_ViewportSize.y);
         }
 
-        if (m_ViewportFocused) m_EditorCamera.OnUpdate(ts);
+        // -------------------------------------------------------------------------
+        // 2. Simulation Step
+        // -------------------------------------------------------------------------
+
+        Renderer2D::ResetStats();
 
         m_Framebuffer->Bind();
-        Theme theme;
-        glClearColor(theme.WindowBg.x, theme.WindowBg.y, theme.WindowBg.z, 1.0f);
-        glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+        RenderCommand::SetClearColor({ 0.1f, 0.1f, 0.1f, 1 });
+        RenderCommand::Clear();
 
-        World* world = Engine::Get().GetWorld();
-        if (world) {
-            world->OnUpdate(ts, m_EditorCamera.GetViewProjection());
+        // Clear Entity ID attachment (used for mouse picking)
+        m_Framebuffer->ClearAttachment(1, -1);
+
+        switch (m_SceneState)
+        {
+        case SceneState::Edit:
+        {
+            // Update Editor Camera (Input/Movement)
+            if (m_ViewportFocused)
+                m_EditorCamera.OnUpdate(ts);
+
+            // In Edit Mode, we DO NOT step the simulation.
+            // We only invoke the Presentation Pipeline using the Editor Camera.
+            m_ActiveScene->OnRender(m_EditorCamera.GetViewProjection());
+            break;
         }
+        case SceneState::Play:
+        {
+            // Run Authoritative Simulation (Fixed Step Logic)
+            m_ActiveScene->OnUpdateSimulation(ts);
+
+            // Render using the Game Camera (Primary Camera Component)
+            // This mimics the Client behavior exactly.
+            glm::mat4 viewProj = m_ActiveScene->GetPrimaryCameraViewProjection();
+            m_ActiveScene->OnRender(viewProj);
+            break;
+        }
+        }
+
+        // -------------------------------------------------------------------------
+        // 3. Editor Overlays & Picking
+        // -------------------------------------------------------------------------
+
+        auto [mx, my] = ImGui::GetMousePos();
+        mx -= m_ViewportBounds[0].x;
+        my -= m_ViewportBounds[0].y;
+        glm::vec2 viewportSize = m_ViewportBounds[1] - m_ViewportBounds[0];
+        my = viewportSize.y - my;
+        int mouseX = (int)mx;
+        int mouseY = (int)my;
+
+        if (mouseX >= 0 && mouseY >= 0 && mouseX < (int)viewportSize.x && mouseY < (int)viewportSize.y)
+        {
+            int pixelData = m_Framebuffer->ReadPixel(1, mouseX, mouseY);
+            m_HoveredEntity = pixelData == -1 ? Entity() : Entity((entt::entity)pixelData, &m_ActiveScene->GetRegistry());
+        }
+
+        // Note: Overlay rendering (colliders/gizmos) would be injected here via a dedicated OverlayRenderer
+
         m_Framebuffer->Unbind();
-    }
-
-    void EditorLayer::OnEvent(Event& e)
-    {
-        if (m_ViewportHovered) m_EditorCamera.OnEvent(e);
-
-        EventDispatcher dispatcher(e);
-        dispatcher.Dispatch<FileDropEvent>(AETHER_BIND_EVENT_FN(EditorLayer::OnFileDrop));
-        dispatcher.Dispatch<KeyPressedEvent>(AETHER_BIND_EVENT_FN(EditorLayer::OnKeyPressed));
-    }
-
-    bool EditorLayer::OnFileDrop(FileDropEvent& e)
-    {
-        std::filesystem::path targetDir = m_ContentBrowserPanel.GetCurrentDirectory();
-        const auto& paths = e.GetPaths();
-
-        for (const auto& pathString : paths)
-        {
-            std::filesystem::path sourcePath(pathString);
-            if (!std::filesystem::is_regular_file(sourcePath)) continue;
-
-            std::string filename = sourcePath.filename().string();
-            std::filesystem::path destinationPath = targetDir / filename;
-
-            try {
-                std::filesystem::copy_file(sourcePath, destinationPath, std::filesystem::copy_options::overwrite_existing);
-                AssetManager::ImportSourceFile(destinationPath);
-                AETHER_CORE_INFO("Dropped and Imported: {}", filename);
-            }
-            catch (std::filesystem::filesystem_error& ex) {
-                AETHER_CORE_ERROR("Import Failed for {}: {}", filename, ex.what());
-            }
-        }
-        return true;
-    }
-
-    bool EditorLayer::OnKeyPressed(KeyPressedEvent& e)
-    {
-        // Safety: Do not trigger shortcuts if user is typing in a text field
-        if (ImGui::GetIO().WantTextInput) return false;
-
-        bool control = Input::IsKeyPressed(Key::LeftCtrl) || Input::IsKeyPressed(Key::RightCtrl);
-        bool shift = Input::IsKeyPressed(Key::LeftShift) || Input::IsKeyPressed(Key::RightShift);
-
-        switch (e.GetKeyCode())
-        {
-        case Key::Z:
-        {
-            if (control && shift) {
-                CommandHistory::Redo();
-                return true;
-            }
-            else if (control) {
-                CommandHistory::Undo();
-                return true;
-            }
-            break;
-        }
-        case Key::Y:
-        {
-            if (control) {
-                CommandHistory::Redo();
-                return true;
-            }
-            break;
-        }
-        }
-        return false;
     }
 
     void EditorLayer::OnImGuiRender()
     {
+		// -------------------------------------------------------------------------
+		//     DOCKSPACE SETUP
+		//  -------------------------------------------------------------------------
         // Ensure blocking stays disabled
         Engine::Get().GetImGuiLayer()->SetBlockEvents(false);
 
@@ -271,85 +213,65 @@ namespace aether {
             else ++it;
         }
 
-        ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0.0f, 0.0f));
+		// -------------------------------------------------------------------------
+		//     VIEWPORT PANEL
+		// -------------------------------------------------------------------------
+
+        // --- Viewport Panel ---
+        ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2{ 0, 0 });
         ImGui::Begin("Viewport");
+
+        auto viewportMinRegion = ImGui::GetWindowContentRegionMin();
+        auto viewportMaxRegion = ImGui::GetWindowContentRegionMax();
+        auto viewportOffset = ImGui::GetWindowPos();
+        m_ViewportBounds[0] = { viewportMinRegion.x + viewportOffset.x, viewportMinRegion.y + viewportOffset.y };
+        m_ViewportBounds[1] = { viewportMaxRegion.x + viewportOffset.x, viewportMaxRegion.y + viewportOffset.y };
+
         m_ViewportFocused = ImGui::IsWindowFocused();
         m_ViewportHovered = ImGui::IsWindowHovered();
+        Application::Get().GetImGuiLayer()->BlockEvents(!m_ViewportFocused && !m_ViewportHovered);
 
-        ImVec2 viewportSize = ImGui::GetContentRegionAvail();
-        m_ViewportSize = { viewportSize.x, viewportSize.y };
+        ImVec2 viewportPanelSize = ImGui::GetContentRegionAvail();
+        m_ViewportSize = { viewportPanelSize.x, viewportPanelSize.y };
 
-        if (m_Framebuffer)
-            ImGui::Image((void*)(uintptr_t)m_Framebuffer->GetColorAttachmentRendererID(), viewportSize, { 0, 1 }, { 1, 0 });
+        uint64_t textureID = m_Framebuffer->GetColorAttachmentRendererID();
+        ImGui::Image(reinterpret_cast<void*>(textureID), ImVec2{ m_ViewportSize.x, m_ViewportSize.y }, ImVec2{ 0, 1 }, ImVec2{ 1, 0 });
+
+        // Content Browser Drag & Drop
+        if (ImGui::BeginDragDropTarget())
+        {
+            if (const ImGuiPayload* payload = ImGui::AcceptDragDropPayload("CONTENT_BROWSER_ITEM"))
+            {
+                const wchar_t* path = (const wchar_t*)payload->Data;
+                OpenScene(std::filesystem::path(g_AssetPath) / path);
+            }
+            ImGui::EndDragDropTarget();
+        }
 
         ImGui::End();
         ImGui::PopStyleVar();
 
+        // --- Stats Panel ---
+        ImGui::Begin("Renderer Stats");
+        auto stats = Renderer2D::GetStats();
+        ImGui::Text("Draw Calls: %d", stats.DrawCalls);
+        ImGui::Text("Quads: %d", stats.QuadCount);
+        ImGui::Text("Hovered Entity: %s", m_HoveredEntity ? m_HoveredEntity.GetComponent<TagComponent>().Tag.c_str() : "None");
         ImGui::End();
+
+        // --- Management Panels ---
+        m_SceneHierarchyPanel.OnImGuiRender();
     }
 
-    void EditorLayer::RenderPreferencesPanel()
+    void EditorLayer::OnEvent(Event& e)
     {
-        if (!m_ShowPreferences) return;
-
-        ImGui::SetNextWindowSize(ImVec2(400, 200), ImGuiCond_FirstUseEver);
-        ImGui::Begin("Preferences", &m_ShowPreferences, ImGuiWindowFlags_NoCollapse);
-
-        Theme theme;
-        ImGui::TextColored(theme.AccentPrimary, "Content Browser");
-        ImGui::Separator();
-
-        bool show = m_Settings.ShowRawAssets;
-        if (ImGui::Checkbox("Show Raw Source Files", &show))
+        if (m_SceneState == SceneState::Edit)
         {
-            m_Settings.ShowRawAssets = show;
-            SaveSettings();
+            m_EditorCamera.OnEvent(e);
         }
 
-        ImGui::SameLine();
-        ImGui::TextDisabled("(?)");
-        if (ImGui::IsItemHovered()) {
-            ImGui::SetTooltip("If enabled, source files (png, jpg) will be visible along with their .aeth assets.\nDisable this to reduce clutter.");
-        }
-
-        ImGui::End();
-    }
-
-    void EditorLayer::EnsureLayout(unsigned int dockspace_id)
-    {
-        ImGui::DockBuilderRemoveNode(dockspace_id);
-        ImGui::DockBuilderAddNode(dockspace_id, ImGuiDockNodeFlags_DockSpace | ImGuiDockNodeFlags_PassthruCentralNode);
-        ImGui::DockBuilderSetNodeSize(dockspace_id, ImGui::GetMainViewport()->Size);
-
-        ImGuiID dock_main_id = dockspace_id;
-        ImGuiID dock_right_id = ImGui::DockBuilderSplitNode(dock_main_id, ImGuiDir_Right, 0.25f, nullptr, &dock_main_id);
-        ImGuiID dock_left_id = ImGui::DockBuilderSplitNode(dock_main_id, ImGuiDir_Left, 0.20f, nullptr, &dock_main_id);
-        ImGuiID dock_bottom_id = ImGui::DockBuilderSplitNode(dock_main_id, ImGuiDir_Down, 0.30f, nullptr, &dock_main_id);
-
-        ImGui::DockBuilderDockWindow("Viewport", dock_main_id);
-        ImGui::DockBuilderDockWindow("Inspector", dock_right_id);
-        ImGui::DockBuilderDockWindow("Scene Hierarchy", dock_left_id);
-        ImGui::DockBuilderDockWindow("Content Browser", dock_bottom_id);
-        ImGui::DockBuilderFinish(dockspace_id);
-    }
-
-    void EditorLayer::OpenAsset(const std::filesystem::path& path)
-    {
-        auto relativePath = std::filesystem::relative(path, Project::GetAssetDirectory());
-
-        for (auto& editor : m_AssetEditors) {
-            if (editor->GetAssetPath() == relativePath) {
-                editor->SetFocus();
-                return;
-            }
-        }
-
-        if (AssetManager::HasAsset(relativePath)) {
-            AssetType type = AssetManager::GetMetadata(relativePath).Type;
-            if (type == AssetType::Texture2D) {
-                auto panel = std::make_shared<TextureViewerPanel>("Texture Viewer", relativePath);
-                m_AssetEditors.push_back(panel);
-            }
-        }
+        EventDispatcher dispatcher(e);
+        dispatcher.Dispatch<KeyPressedEvent>(AETHER_BIND_EVENT_FN(EditorLayer::OnKeyPressed));
+        dispatcher.Dispatch<MouseButtonPressedEvent>(AETHER_BIND_EVENT_FN(EditorLayer::OnMouseButtonPressed));
     }
 }

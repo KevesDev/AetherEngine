@@ -1,67 +1,87 @@
 #pragma once
+
 #include "System.h"
+#include "../Log.h"
+#include "../Engine.h"
+
 #include "../../ecs/Components.h"
+#include "../../ecs/Registry.h"
 #include "../../input/Input.h"
 #include "../../input/InputMappingContext.h"
-#include "../Engine.h"
-#include "../AetherTime.h"
+#include "../../asset/AssetManager.h"
+
 #include <unordered_map>
-#include <memory>
 
 namespace aether {
 
+    /**
+     * InputSystem
+     * The bridge between Hardware Input and the Game Simulation.
+     * * IMPORTANT ARCHITECTURE:
+     * 1. Hardware Poll: Checks physical key states (keyboard/mouse/gamepad).
+     * 2. Context Resolution: Maps physical keys to logical Action IDs via AssetManager.
+     * 3. Accumulation: Sums inputs (e.g., W=+1, S=-1 -> Result=0) to prevent masking.
+     * 4. Ring Buffer Commit: Writes the final frame to the InputComponent for the current tick.
+     */
     class InputSystem : public ISystem {
     public:
-        InputSystem() = default;
-
-        virtual void OnUpdate(Registry& reg, float ts) override {
-            // Authoritative: Server receives inputs via network, not SDL polling.
+        void Update(Registry& registry, float deltaTime) override {
+            // Server Safety: The Server has no physical input hardware.
+            // Input on the server is driven by the NetworkSystem (packet ingestion), not this system.
             if (Engine::Get().GetAppType() == ApplicationType::Server) return;
 
-            // In a fixed-step loop, we use the global simulation tick
-            uint32_t currentTick = (uint32_t)(AetherTime::GetTime() / ts);
+            auto view = registry.view<PlayerControllerComponent>();
+            for (auto entity : view) {
+                const auto& controller = view.get<PlayerControllerComponent>(entity);
 
-            auto view = reg.view<PlayerControllerComponent, InputComponent>();
-            for (auto entityID : view) {
-                auto& controller = reg.GetComponent<PlayerControllerComponent>(entityID);
-                auto& inputComp = reg.GetComponent<InputComponent>(entityID);
-
-                // Update Ring Buffer Head
-                inputComp.CurrentTick = currentTick;
-
-                if (controller.ActiveMappingContextPath.empty()) continue;
-
-                // Asset Resolution
-                std::shared_ptr<InputMappingContext> context = GetContext(controller.ActiveMappingContextPath);
+                // 1. Validate Context
+                if (controller.ActiveMappingContext == 0) continue;
+                auto context = AssetManager::GetAsset<InputMappingContext>(controller.ActiveMappingContext);
                 if (!context) continue;
 
-                // Map Hardware -> Logical Ring Buffer
-                // We do not 'clear' the buffer; we simply write to the slot for 'currentTick'
-                // inside SetAction, effectively overwriting old data if the buffer wraps.
+                // 2. Prepare Input Component
+                // using get_or_emplace ensures we don't crash on new entities
+                if (!registry.has<InputComponent>(entity)) {
+                    registry.emplace<InputComponent>(entity);
+                }
+                auto& inputComp = registry.get<InputComponent>(entity);
+
+                // 3. Frame Initialization
+                // We must clear the actions for the current tick before accumulating.
+                // This prevents "stuck" inputs from previous frames if keys are released.
+                inputComp.CurrentTick++; // Advance simulation tick (Client Authoritative step)
+
+                // Get reference to the frame we are about to write
+                // Accessing the ring buffer manually here to clear it effectively
+                InputFrame& currentFrame = inputComp.InputHistory[inputComp.CurrentTick % INPUT_BUFFER_SIZE];
+                currentFrame.Tick = inputComp.CurrentTick;
+                currentFrame.Clear();
+
+                // 4. Input Accumulation
+                // We use a local map to sum values. This handles conflicting inputs 
+                // (e.g. Left + Right) correctly by cancelling them out before writing.
+                std::unordered_map<uint32_t, float> frameValues;
+
                 for (const auto& mapping : context->GetMappings()) {
+                    // Poll Hardware
+                    // TODO: Abstraction for Axis/Gamepad support would happen here.
+                    // Currently maps digital key press to float value.
                     if (Input::IsKeyPressed(mapping.KeyCode)) {
-                        // Accumulate scale (simple addition for same-frame inputs)
-                        float currentValue = inputComp.GetActionValue(mapping.ActionID);
-                        inputComp.SetAction(mapping.ActionID, currentValue + mapping.Scale);
+                        // Accumulate: Add scale (e.g. 1.0 or -1.0)
+                        frameValues[mapping.ActionID] += mapping.Scale;
+                    }
+                }
+
+                // 5. Commit to Ring Buffer
+                for (const auto& [actionID, value] : frameValues) {
+                    // Only write non-zero values to save bandwidth/storage
+                    // Logic allows value to exceed 1.0 (e.g. analog triggers + modifiers), 
+                    // clamping should happen in the gameplay logic if desired.
+                    if (value != 0.0f) {
+                        currentFrame.SetAction(actionID, value);
                     }
                 }
             }
         }
-
-        virtual const char* GetName() const override { return "InputSystem"; }
-
-    private:
-        std::shared_ptr<InputMappingContext> GetContext(const std::string& path) {
-            auto it = m_ContextCache.find(path);
-            if (it != m_ContextCache.end()) return it->second;
-
-            // Load from disk using the implemented JSON loader
-            auto newContext = InputMappingContext::Load(path);
-            if (newContext) m_ContextCache[path] = newContext;
-
-            return newContext;
-        }
-
-        std::unordered_map<std::string, std::shared_ptr<InputMappingContext>> m_ContextCache;
     };
 }
