@@ -84,6 +84,13 @@ namespace aether {
                 m_Window->OnUpdate();
             }
 
+            // Clear the presentation backbuffer once per frame before UI/render passes.
+            // This keeps the visual output stable and avoids frame trails while
+            // leaving offscreen framebuffers under the control of render layers.
+            if (m_Window && !m_Minimized) {
+                m_Window->Clear();
+            }
+
             // 3. Application Layer Update (Variable Step)
             // NOTE:
             // - Editor/UI layers should use the variable frame delta only.
@@ -118,29 +125,25 @@ namespace aether {
     void Engine::PushLayer(Layer* layer) {
         m_LayerOperations.push_back([this, layer]() {
             m_LayerStack.PushLayer(layer);
-            layer->OnAttach();
-            });
+        });
     }
 
     void Engine::PushOverlay(Layer* layer) {
         m_LayerOperations.push_back([this, layer]() {
             m_LayerStack.PushOverlay(layer);
-            layer->OnAttach();
-            });
+        });
     }
 
     void Engine::PopLayer(Layer* layer) {
         m_LayerOperations.push_back([this, layer]() {
             m_LayerStack.PopLayer(layer);
-            layer->OnDetach();
-            });
+        });
     }
 
     void Engine::PopOverlay(Layer* layer) {
         m_LayerOperations.push_back([this, layer]() {
             m_LayerStack.PopOverlay(layer);
-            layer->OnDetach();
-            });
+        });
     }
 
     bool Engine::OnWindowClose(WindowCloseEvent& e) {

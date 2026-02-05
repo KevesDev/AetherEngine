@@ -6,7 +6,6 @@
 #include "../engine/core/Config.h"
 #include "../engine/core/VFS.h"
 #include "../engine/project/Project.h" 
-#include "../engine/core/Layers/ImGuiLayer.h"
 #include "layers/EditorLayer.h"
 #include "layers/ProjectHubLayer.h" 
 #include "../engine/scene/Scene.h"
@@ -42,14 +41,7 @@ int main(int argc, char* argv[])
 
         auto engine = std::make_unique<aether::Engine>(spec);
 
-        // 1. Push ImGui Overlay
-        auto* imguiLayer = new aether::ImGuiLayer();
-        engine->PushOverlay(imguiLayer);
-
-        // Tell Engine this is the UI layer so it calls Begin()/End()
-        engine->SetImGuiLayer(imguiLayer);
-
-        // 2. Push Logic Layers
+        // Push Logic Layers
         if (openHub) {
             engine->PushLayer(new aether::ProjectHubLayer());
         }

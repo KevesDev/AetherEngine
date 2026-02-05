@@ -1,5 +1,7 @@
 #pragma once
 
+#include <cstdint>
+
 namespace aether {
     // Defines a span of time (delta time) with helper conversions.
     class TimeStep

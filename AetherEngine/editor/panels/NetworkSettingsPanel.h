@@ -1,6 +1,7 @@
 #pragma once
 
 #include "../../engine/project/Project.h"
+#include <imgui.h>
 
 namespace aether {
 

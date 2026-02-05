@@ -148,9 +148,8 @@ namespace aether {
 
         // Performance overlay, docked inside the viewport bounds.
         {
-            ImVec2 viewportMin = m_ViewportBounds[0];
-            ImVec2 viewportMax = m_ViewportBounds[1];
-            ImVec2 size = { viewportMax.x - viewportMin.x, viewportMax.y - viewportMin.y };
+            ImVec2 viewportMin(m_ViewportBounds[0].x, m_ViewportBounds[0].y);
+            ImVec2 viewportMax(m_ViewportBounds[1].x, m_ViewportBounds[1].y);
 
             ImGui::SetNextWindowPos(ImVec2(viewportMax.x - 10.0f, viewportMin.y + 10.0f), ImGuiCond_Always, ImVec2(1.0f, 0.0f));
             ImGui::SetNextWindowBgAlpha(0.75f);
