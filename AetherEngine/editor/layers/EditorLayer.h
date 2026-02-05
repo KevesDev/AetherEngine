@@ -46,6 +46,9 @@ namespace aether {
         void SaveScene();
         void SaveSceneAs();
 
+        // Docking infrastructure - establishes DockSpace for layout restoration
+        void SetupDockSpace();
+
     private:
         enum class SceneState
         {

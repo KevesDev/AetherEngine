@@ -37,6 +37,9 @@ namespace aether {
         m_SceneHierarchyPanel.SetContext(m_ActiveScene);
 
         m_EditorCamera = EditorCamera(30.0f, 1.778f, 0.1f, 1000.0f);
+
+        // Link InspectorPanel to SceneHierarchyPanel for selection sync
+        // This will be handled via event callback in future iterations
     }
 
     void EditorLayer::OnDetach()
@@ -92,26 +95,106 @@ namespace aether {
         if (mouseX >= 0 && mouseY >= 0 && mouseX < (int)viewportSize.x && mouseY < (int)viewportSize.y)
         {
             int pixelData = m_Framebuffer->ReadPixel(1, mouseX, mouseY);
-            // FIX: Entity constructor requires (EntityID, Registry*) not (EntityID, Scene*)
             m_HoveredEntity = pixelData == -1 ? Entity() : Entity((EntityID)pixelData, &m_ActiveScene->GetRegistry());
         }
 
         m_Framebuffer->Unbind();
     }
 
-    void EditorLayer::OnImGuiRender()
+    void EditorLayer::SetupDockSpace()
     {
-        // Main menu bar
-        if (ImGui::BeginMainMenuBar()) {
-            if (ImGui::BeginMenu("Settings")) {
-                if (ImGui::MenuItem("Network")) {
-                    // Network settings panel is rendered below in a dedicated window.
+        /**
+         * DockSpace Setup
+         *
+         * Establishes the root docking context for the editor.
+         * This allows ImGui to restore layout from editor.ini correctly.
+         *
+         * ARCHITECTURE:
+         * - Engine remains pure: it knows nothing about editor-specific layouts
+         * - EditorLayer manages its own docking structure
+         * - ImGui's built-in serialization handles persistence via editor.ini
+         */
+
+        static bool dockspaceOpen = true;
+        static ImGuiDockNodeFlags dockspace_flags = ImGuiDockNodeFlags_None;
+
+        // Configure window flags for fullscreen dockspace
+        ImGuiWindowFlags window_flags = ImGuiWindowFlags_MenuBar | ImGuiWindowFlags_NoDocking;
+
+        ImGuiViewport* viewport = ImGui::GetMainViewport();
+        ImGui::SetNextWindowPos(viewport->WorkPos);
+        ImGui::SetNextWindowSize(viewport->WorkSize);
+        ImGui::SetNextWindowViewport(viewport->ID);
+
+        ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, 0.0f);
+        ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 0.0f);
+
+        window_flags |= ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoCollapse;
+        window_flags |= ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove;
+        window_flags |= ImGuiWindowFlags_NoBringToFrontOnFocus | ImGuiWindowFlags_NoNavFocus;
+
+        // Passthrough dockspace (allows docking into the background)
+        if (dockspace_flags & ImGuiDockNodeFlags_PassthruCentralNode)
+            window_flags |= ImGuiWindowFlags_NoBackground;
+
+        ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0.0f, 0.0f));
+        ImGui::Begin("Aether DockSpace", &dockspaceOpen, window_flags);
+        ImGui::PopStyleVar();
+        ImGui::PopStyleVar(2);
+
+        // Create DockSpace
+        ImGuiID dockspace_id = ImGui::GetID("AetherEditorDockSpace");
+        ImGui::DockSpace(dockspace_id, ImVec2(0.0f, 0.0f), dockspace_flags);
+
+        // Menu Bar
+        if (ImGui::BeginMenuBar())
+        {
+            if (ImGui::BeginMenu("File"))
+            {
+                if (ImGui::MenuItem("New Scene", "Ctrl+N"))
+                    NewScene();
+
+                if (ImGui::MenuItem("Open Scene", "Ctrl+O"))
+                    OpenScene();
+
+                if (ImGui::MenuItem("Save", "Ctrl+S"))
+                    SaveScene();
+
+                if (ImGui::MenuItem("Save As...", "Ctrl+Shift+S"))
+                    SaveSceneAs();
+
+                ImGui::Separator();
+
+                if (ImGui::MenuItem("Exit"))
+                    Engine::Get().OnEvent(WindowCloseEvent());
+
+                ImGui::EndMenu();
+            }
+
+            if (ImGui::BeginMenu("Settings"))
+            {
+                if (ImGui::MenuItem("Network"))
+                {
+                    // Network settings window visibility handled below
                 }
                 ImGui::EndMenu();
             }
-            ImGui::EndMainMenuBar();
+
+            ImGui::EndMenuBar();
         }
 
+        ImGui::End(); // DockSpace
+    }
+
+    void EditorLayer::OnImGuiRender()
+    {
+        // CRITICAL: Establish DockSpace FIRST before any other windows
+        // This allows ImGui to restore the saved layout from editor.ini
+        SetupDockSpace();
+
+        // -------------------------------------------------------------------------
+        // Viewport Window (Central Docked Window)
+        // -------------------------------------------------------------------------
         ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2{ 0, 0 });
         ImGui::Begin("Viewport");
 
@@ -124,7 +207,6 @@ namespace aether {
         m_ViewportFocused = ImGui::IsWindowFocused();
         m_ViewportHovered = ImGui::IsWindowHovered();
 
-        // FIX: Application::Get() -> Engine::Get()
         Engine::Get().GetImGuiLayer()->SetBlockEvents(!m_ViewportFocused && !m_ViewportHovered);
 
         ImVec2 viewportPanelSize = ImGui::GetContentRegionAvail();
@@ -146,7 +228,9 @@ namespace aether {
         ImGui::End();
         ImGui::PopStyleVar();
 
-        // Performance overlay, docked inside the viewport bounds.
+        // -------------------------------------------------------------------------
+        // Performance Overlay (Docked within Viewport bounds)
+        // -------------------------------------------------------------------------
         {
             ImVec2 viewportMin(m_ViewportBounds[0].x, m_ViewportBounds[0].y);
             ImVec2 viewportMax(m_ViewportBounds[1].x, m_ViewportBounds[1].y);
@@ -168,6 +252,25 @@ namespace aether {
             ImGui::End();
         }
 
+        // -------------------------------------------------------------------------
+        // Editor Panels (Can be docked anywhere)
+        // -------------------------------------------------------------------------
+
+        // Scene Hierarchy
+        m_SceneHierarchyPanel.OnImGuiRender();
+
+        // Inspector (bound to hierarchy selection)
+        Entity selectedEntity = m_SceneHierarchyPanel.GetSelectedEntity();
+        if (selectedEntity)
+        {
+            m_InspectorPanel.SetContext(selectedEntity);
+        }
+        m_InspectorPanel.OnImGuiRender();
+
+        // Content Browser
+        m_ContentBrowserPanel.OnImGuiRender();
+
+        // Renderer Stats (Development Tool)
         ImGui::Begin("Renderer Stats");
         auto stats = Renderer2D::GetStats();
         ImGui::Text("Draw Calls: %d", stats.DrawCalls);
@@ -180,9 +283,7 @@ namespace aether {
 
         ImGui::End();
 
-        m_SceneHierarchyPanel.OnImGuiRender();
-
-        // Network settings window (opened via menu).
+        // Network Settings (Optional Window)
         ImGui::Begin("Network Settings");
         m_NetworkSettingsPanel.OnImGuiRender();
         ImGui::End();
