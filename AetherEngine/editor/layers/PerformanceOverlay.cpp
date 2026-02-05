@@ -14,8 +14,8 @@ namespace aether {
         if (!m_Enabled)
             return;
 
-        // Update frame timing
-        float deltaTime = (float)AetherTime::DeltaTime();
+        // Update frame timing (real-time frame delta)
+        float deltaTime = (float)AetherTime::GetFrameDelta();
         UpdateFrameHistory(deltaTime);
 
         // Update FPS counter (smoothed)
@@ -34,39 +34,6 @@ namespace aether {
 
             m_UpdateTimer = 0.0f;
         }
-
-        // -------------------------------------------------------------------------
-        // Position overlay in selected corner
-        // -------------------------------------------------------------------------
-        const float PAD = 10.0f;
-        ImGuiViewport* viewport = ImGui::GetMainViewport();
-        ImVec2 work_pos = viewport->WorkPos;
-        ImVec2 work_size = viewport->WorkSize;
-        ImVec2 window_pos, window_pos_pivot;
-
-        // Calculate position based on corner selection
-        switch (m_CornerPosition)
-        {
-        case 0: // Top-Left
-            window_pos = ImVec2(work_pos.x + PAD, work_pos.y + PAD);
-            window_pos_pivot = ImVec2(0.0f, 0.0f);
-            break;
-        case 1: // Top-Right (default)
-            window_pos = ImVec2(work_pos.x + work_size.x - PAD, work_pos.y + PAD);
-            window_pos_pivot = ImVec2(1.0f, 0.0f);
-            break;
-        case 2: // Bottom-Left
-            window_pos = ImVec2(work_pos.x + PAD, work_pos.y + work_size.y - PAD);
-            window_pos_pivot = ImVec2(0.0f, 1.0f);
-            break;
-        case 3: // Bottom-Right
-            window_pos = ImVec2(work_pos.x + work_size.x - PAD, work_pos.y + work_size.y - PAD);
-            window_pos_pivot = ImVec2(1.0f, 1.0f);
-            break;
-        }
-
-        ImGui::SetNextWindowPos(window_pos, ImGuiCond_Always, window_pos_pivot);
-        ImGui::SetNextWindowBgAlpha(0.75f); // Semi-transparent background
 
         // -------------------------------------------------------------------------
         // Render overlay window
@@ -159,10 +126,12 @@ namespace aether {
 
         ImGui::TextColored(color, "%.2f ms", m_FrameTimeMS);
 
-        // Frame time breakdown (future expansion)
-        ImGui::TextColored(theme.TextMuted, "  Game:      %.2f ms", m_FrameTimeMS * 0.6f);
-        ImGui::TextColored(theme.TextMuted, "  Render:    %.2f ms", m_FrameTimeMS * 0.3f);
-        ImGui::TextColored(theme.TextMuted, "  UI:        %.2f ms", m_FrameTimeMS * 0.1f);
+        // Simulation timing diagnostics
+        const double fixedStep = AetherTime::GetFixedTimeStep();
+        const std::uint64_t simTick = AetherTime::GetSimTick();
+
+        ImGui::TextColored(theme.TextMuted, "Sim Tick:   %llu", static_cast<unsigned long long>(simTick));
+        ImGui::TextColored(theme.TextMuted, "Fixed Step: %.3f ms", fixedStep * 1000.0);
     }
 
     void PerformanceOverlay::RenderRendererStats()

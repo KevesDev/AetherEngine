@@ -86,6 +86,15 @@ namespace aether {
                 { "ActiveMappingContext", pcc.ActiveMappingContext }
             };
         }
+
+        // 7. Networking / Replication
+        if (entity.HasComponent<ReplicationComponent>()) {
+            auto& rc = entity.GetComponent<ReplicationComponent>();
+            out["ReplicationComponent"] = {
+                { "Mode", static_cast<int>(rc.Mode) },
+                { "UpdateRateHz", rc.UpdateRateHz }
+            };
+        }
     }
 
     void SceneSerializer::Serialize(const std::filesystem::path& filepath)
@@ -217,6 +226,16 @@ namespace aether {
                     auto& pcc = deserializedEntity.AddComponent<PlayerControllerComponent>();
                     pcc.PlayerIndex = entityJson["PlayerControllerComponent"]["PlayerIndex"];
                     pcc.ActiveMappingContext = entityJson["PlayerControllerComponent"]["ActiveMappingContext"];
+                }
+
+                // Replication
+                if (!entityJson["ReplicationComponent"].is_null()) {
+                    auto& rc = deserializedEntity.AddComponent<ReplicationComponent>();
+                    auto& r = entityJson["ReplicationComponent"];
+                    int mode = r.value("Mode", static_cast<int>(ReplicationMode::Frequent));
+                    rc.Mode = static_cast<ReplicationMode>(mode);
+                    rc.UpdateRateHz = r.value("UpdateRateHz", 20.0f);
+                    rc.Accumulator = 0.0f;
                 }
             }
         }

@@ -101,6 +101,17 @@ namespace aether {
 
     void EditorLayer::OnImGuiRender()
     {
+        // Main menu bar
+        if (ImGui::BeginMainMenuBar()) {
+            if (ImGui::BeginMenu("Settings")) {
+                if (ImGui::MenuItem("Network")) {
+                    // Network settings panel is rendered below in a dedicated window.
+                }
+                ImGui::EndMenu();
+            }
+            ImGui::EndMainMenuBar();
+        }
+
         ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2{ 0, 0 });
         ImGui::Begin("Viewport");
 
@@ -135,6 +146,29 @@ namespace aether {
         ImGui::End();
         ImGui::PopStyleVar();
 
+        // Performance overlay, docked inside the viewport bounds.
+        {
+            ImVec2 viewportMin = m_ViewportBounds[0];
+            ImVec2 viewportMax = m_ViewportBounds[1];
+            ImVec2 size = { viewportMax.x - viewportMin.x, viewportMax.y - viewportMin.y };
+
+            ImGui::SetNextWindowPos(ImVec2(viewportMax.x - 10.0f, viewportMin.y + 10.0f), ImGuiCond_Always, ImVec2(1.0f, 0.0f));
+            ImGui::SetNextWindowBgAlpha(0.75f);
+
+            ImGuiWindowFlags overlayFlags =
+                ImGuiWindowFlags_NoDecoration |
+                ImGuiWindowFlags_AlwaysAutoResize |
+                ImGuiWindowFlags_NoSavedSettings |
+                ImGuiWindowFlags_NoFocusOnAppearing |
+                ImGuiWindowFlags_NoNav |
+                ImGuiWindowFlags_NoMove;
+
+            if (ImGui::Begin("Performance Overlay", nullptr, overlayFlags)) {
+                m_PerformanceOverlay.OnImGuiRender();
+            }
+            ImGui::End();
+        }
+
         ImGui::Begin("Renderer Stats");
         auto stats = Renderer2D::GetStats();
         ImGui::Text("Draw Calls: %d", stats.DrawCalls);
@@ -148,6 +182,11 @@ namespace aether {
         ImGui::End();
 
         m_SceneHierarchyPanel.OnImGuiRender();
+
+        // Network settings window (opened via menu).
+        ImGui::Begin("Network Settings");
+        m_NetworkSettingsPanel.OnImGuiRender();
+        ImGui::End();
     }
 
     void EditorLayer::OnEvent(Event& e)

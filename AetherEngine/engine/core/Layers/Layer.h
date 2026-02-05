@@ -20,12 +20,17 @@ namespace aether {
         virtual void OnAttach() {}
         virtual void OnDetach() {}
 
-		// Called every frame with delta time (for Game Logic)
+        // Variable-step per-frame update driven by the frame clock.
+        // Intended for editor/client behavior, camera movement, and other
+        // non-authoritative logic that can depend on real frame time.
+        // Authoritative gameplay simulation must run inside Scene::OnUpdateSimulation
+        // via the SystemScheduler using the fixed simulation timestep.
         virtual void OnUpdate(TimeStep ts) {}
-		// Called every frame for ImGui rendering (for UI)
+
+        // Called every frame for ImGui rendering (for UI)
         virtual void OnImGuiRender() {}
 
-        // Called every frame (for Game Logic)
+        // Legacy no-argument update. Prefer the TimeStep overload.
         virtual void OnUpdate() {}
 
         // Called when an event occurs (for Input)

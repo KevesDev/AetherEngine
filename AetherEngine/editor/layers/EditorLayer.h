@@ -14,6 +14,8 @@
 
 #include "../panels/SceneHierarchyPanel.h"
 #include "../EditorCamera.h"
+#include "../panels/NetworkSettingsPanel.h"
+#include "PerformanceOverlay.h"
 
 #include <glm/glm.hpp>
 #include <filesystem>
@@ -56,6 +58,7 @@ namespace aether {
         std::filesystem::path m_EditorScenePath;
 
         SceneHierarchyPanel m_SceneHierarchyPanel;
+        NetworkSettingsPanel m_NetworkSettingsPanel;
 
         std::shared_ptr<Framebuffer> m_Framebuffer;
         glm::vec2 m_ViewportSize = { 0.0f, 0.0f };
@@ -65,6 +68,9 @@ namespace aether {
         bool m_ViewportHovered = false;
 
         EditorCamera m_EditorCamera;
+
+        // Editor-only performance overlay, scoped to the viewport.
+        PerformanceOverlay m_PerformanceOverlay;
 
         std::shared_ptr<Texture2D> m_CheckerboardTexture;
 

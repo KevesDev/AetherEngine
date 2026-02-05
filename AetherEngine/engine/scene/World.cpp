@@ -17,16 +17,18 @@ namespace aether {
         AETHER_CORE_INFO("-------------------");
     }
 
-    // TODO: Placeholder for runtime start logic
-    void World::OnRuntimeStart() {
-        // Can be used for Initialize physics, scripts, etc.
-    }
-
     void World::OnUpdate(TimeStep ts, const glm::mat4& viewProjection) {
-        // The World is the high-level container that delegates 
-        // the simulation and rendering to the Scene Processor.
-        //if (m_Scene)
-        //    m_Scene->OnUpdate(ts, viewProjection);
+        // The World is the high-level container that delegates
+        // simulation and rendering to the Scene.
+        //
+        // IMPORTANT:
+        // - ts is the variable frame delta from the Engine frame clock.
+        // - Authoritative logic executes inside Scene::OnUpdateSimulation,
+        //   which uses SystemScheduler with a fixed timestep.
+        if (m_Scene) {
+            m_Scene->OnUpdateSimulation(ts.GetSeconds());
+            m_Scene->OnRender(viewProjection);
+        }
     }
 
     // Returns the registry from the internal scene

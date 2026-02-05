@@ -1,5 +1,6 @@
 #pragma once
 #include "System.h"
+#include "../AetherTime.h"
 #include <vector>
 #include <memory>
 #include <array>
@@ -47,10 +48,21 @@ namespace aether {
             // 2. Fixed-Step Accumulation (Deterministic Logic)
             // Simulates physics/gameplay at a locked 60Hz regardless of framerate.
             m_Accumulator += variableDeltaTime;
+
+            // Keep the scheduler's fixed step in sync with the global engine setting.
+            // This avoids divergence between different scenes/worlds.
+            const float fixedStep = static_cast<float>(AetherTime::GetFixedTimeStep());
+            if (fixedStep > 0.0f) {
+                m_FixedTimeStep = fixedStep;
+            }
+
             while (m_Accumulator >= m_FixedTimeStep) {
                 RunGroup(SystemGroup::Simulation, reg, m_FixedTimeStep);
                 RunGroup(SystemGroup::Sync, reg, m_FixedTimeStep);
                 m_Accumulator -= m_FixedTimeStep;
+
+                // Advance global simulation tick once per completed fixed step.
+                AetherTime::AdvanceSimulationTick();
             }
 
             // 3. Variable Stage: Rendering and Interpolation

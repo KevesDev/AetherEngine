@@ -13,8 +13,6 @@ namespace aether {
         World(const std::string& name = "World");
         ~World();
 
-        void OnRuntimeStart();
-
         void OnUpdate(TimeStep ts, const glm::mat4& viewProjection);
 
         // Declarations only (removes the C2084 error)

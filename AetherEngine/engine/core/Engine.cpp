@@ -71,27 +71,30 @@ namespace aether {
                 m_LayerOperations.clear();
             }
 
-            // Calculate Delta Time
-            // In Phase 5, this will drive the Fixed-Step Scheduler accumulator.
-            AetherTime::Update();
-			float time = (float)AetherTime::DeltaTime();
-            TimeStep timestep = time - m_LastFrameTime;
-            m_LastFrameTime = time;
+            // -----------------------------------------------------------------
+            // 1. Frame Clock Update (Real Time)
+            // -----------------------------------------------------------------
+            // This computes the variable frame delta used for rendering/UI/editor.
+            AetherTime::UpdateFrame();
+            float frameDelta = static_cast<float>(AetherTime::GetFrameDelta());
+            TimeStep frameTimeStep(frameDelta);
 
-            // 1. Core Window/Input Update
+            // 2. Core Window/Input Update (Client/Editor only)
             if (m_Window) {
                 m_Window->OnUpdate();
             }
 
-            // 2. Application Layer Update (Variable Step)
-            // Note: In Phase 5, the Scene Simulation loop will be decoupled from this
-            // and moved to a Fixed-Step update called directly by Engine.
+            // 3. Application Layer Update (Variable Step)
+            // NOTE:
+            // - Editor/UI layers should use the variable frame delta only.
+            // - Authoritative gameplay simulation is executed via Scene::OnUpdateSimulation,
+            //   which internally uses SystemScheduler with a fixed timestep.
             if (!m_Minimized) {
                 for (Layer* layer : m_LayerStack)
-                    layer->OnUpdate(timestep);
+                    layer->OnUpdate(frameTimeStep);
             }
 
-            // 3. ImGui Render (Editor/UI)
+            // 4. ImGui Render (Editor/UI)
             if (m_ImGuiLayer && m_Spec.Type != ApplicationType::Server) {
                 m_ImGuiLayer->Begin();
                 for (Layer* layer : m_LayerStack)

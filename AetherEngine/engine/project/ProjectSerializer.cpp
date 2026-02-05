@@ -33,7 +33,11 @@ namespace aether {
             { "StartScene", config.StartScene },
             { "AssetDirectory", config.AssetDirectory.string() },
             { "ScriptModulePath", config.ScriptModulePath.string() },
-            { "EngineVersion", EngineVersion::ToString() }
+            { "EngineVersion", EngineVersion::ToString() },
+            { "ServerPort", config.ServerPort },
+            { "MaxPlayers", config.MaxPlayers },
+            { "StaticReplicationRateHz", config.StaticReplicationRateHz },
+            { "FrequentReplicationRateHz", config.FrequentReplicationRateHz }
         };
 
         // 2. CONVERT TO BINARY (BSON)
@@ -82,6 +86,10 @@ namespace aether {
             config.StartScene = projectData.value("StartScene", "");
             config.AssetDirectory = projectData.value("AssetDirectory", "Assets");
             config.ScriptModulePath = projectData.value("ScriptModulePath", "Scripts/Binaries");
+            config.ServerPort = projectData.value("ServerPort", static_cast<uint16_t>(7777));
+            config.MaxPlayers = projectData.value("MaxPlayers", static_cast<uint32_t>(64));
+            config.StaticReplicationRateHz = projectData.value("StaticReplicationRateHz", 5.0f);
+            config.FrequentReplicationRateHz = projectData.value("FrequentReplicationRateHz", 20.0f);
         }
         catch (json::exception& e) {
             AETHER_CORE_ERROR("ProjectSerializer: BSON Parsing Error: {0}. File may be corrupted.", e.what());

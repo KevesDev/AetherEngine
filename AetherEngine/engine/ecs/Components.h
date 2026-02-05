@@ -181,4 +181,18 @@ namespace aether {
             return frame.GetAction(actionID);
         }
     };
+
+    // Marks an entity as eligible for network replication and carries
+    // configuration for how and when it should be replicated.
+    enum class ReplicationMode : std::uint8_t {
+        None = 0,
+        Static = 1,      // Replicate on creation / rare updates only
+        Frequent = 2     // Replicate frequently (e.g. characters, projectiles)
+    };
+
+    struct ReplicationComponent {
+        ReplicationMode Mode = ReplicationMode::Frequent;
+        float UpdateRateHz = 20.0f;  // Target replication frequency
+        float Accumulator = 0.0f;    // Internal accumulator used by replication system
+    };
 }

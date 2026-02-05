@@ -1,4 +1,4 @@
-﻿project(engine)
+project(engine)
 
 find_package(OpenGL REQUIRED)
 
@@ -13,6 +13,7 @@ add_subdirectory(core)
 add_subdirectory(events)
 add_subdirectory(platform)
 add_subdirectory(input)
+add_subdirectory(network)
 add_subdirectory(vendor)
 add_subdirectory(scene)
 add_subdirectory(ecs)

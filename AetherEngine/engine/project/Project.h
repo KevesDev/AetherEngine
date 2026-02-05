@@ -12,6 +12,12 @@ namespace aether {
         std::string StartScene;
         std::filesystem::path AssetDirectory = "Assets";
         std::filesystem::path ScriptModulePath = "Scripts/Binaries";
+
+        // Networking
+        uint16_t ServerPort = 7777;
+        uint32_t MaxPlayers = 64;
+        float StaticReplicationRateHz = 5.0f;
+        float FrequentReplicationRateHz = 20.0f;
     };
 
     class Project
