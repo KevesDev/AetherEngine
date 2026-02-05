@@ -77,6 +77,7 @@ namespace aether {
     Shader::~Shader()
     {
         glDeleteProgram(m_RendererID);
+        // m_UniformLocationCache automatically cleared (std::unordered_map destructor)
     }
 
     void Shader::Bind() const
@@ -115,27 +116,57 @@ namespace aether {
         }
     }
 
+    // -------------------------------------------------------------------------
+    // Cached Uniform Location Retrieval
+    // -------------------------------------------------------------------------
+    int Shader::GetUniformLocation(const std::string& name)
+    {
+        // Check cache first (fast path)
+        if (m_UniformLocationCache.find(name) != m_UniformLocationCache.end())
+            return m_UniformLocationCache[name];
+
+        // Query GPU (slow path - only happens once per uniform)
+        int location = glGetUniformLocation(m_RendererID, name.c_str());
+
+        // Cache the result (even if -1, to avoid repeated failed queries)
+        m_UniformLocationCache[name] = location;
+
+        // Log warning for missing uniforms (helps catch typos in shader code)
+        if (location == -1)
+            AETHER_CORE_WARN("Shader: Uniform '{0}' not found or optimized out by compiler", name);
+
+        return location;
+    }
+
+    // -------------------------------------------------------------------------
+    // Uniform Upload Methods (Now Using Cache)
+    // -------------------------------------------------------------------------
+
     void Shader::SetMat4(const std::string& name, const void* value)
     {
-        int location = glGetUniformLocation(m_RendererID, name.c_str());
-        glUniformMatrix4fv(location, 1, GL_FALSE, (const float*)value);
+        int location = GetUniformLocation(name);
+        if (location != -1)
+            glUniformMatrix4fv(location, 1, GL_FALSE, (const float*)value);
     }
 
     void Shader::SetFloat4(const std::string& name, float v0, float v1, float v2, float v3)
     {
-        int location = glGetUniformLocation(m_RendererID, name.c_str());
-        glUniform4f(location, v0, v1, v2, v3);
+        int location = GetUniformLocation(name);
+        if (location != -1)
+            glUniform4f(location, v0, v1, v2, v3);
     }
 
     void Shader::SetInt(const std::string& name, int value)
     {
-        int location = glGetUniformLocation(m_RendererID, name.c_str());
-        glUniform1i(location, value);
+        int location = GetUniformLocation(name);
+        if (location != -1)
+            glUniform1i(location, value);
     }
 
     void Shader::SetIntArray(const std::string& name, int* values, uint32_t count)
     {
-        int location = glGetUniformLocation(m_RendererID, name.c_str());
-        glUniform1iv(location, count, values);
+        int location = GetUniformLocation(name);
+        if (location != -1)
+            glUniform1iv(location, count, values);
     }
 }
