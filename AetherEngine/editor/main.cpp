@@ -9,7 +9,7 @@
 #include "../engine/core/Layers/ImGuiLayer.h"
 #include "layers/EditorLayer.h"
 #include "layers/ProjectHubLayer.h" 
-#include "../engine/scene/World.h"
+#include "../engine/scene/Scene.h"
 #include "../engine/scene/SceneSerializer.h"
 
 int main(int argc, char* argv[])
@@ -34,19 +34,13 @@ int main(int argc, char* argv[])
             }
         }
 
-        aether::WindowProps settings;
-        settings.Title = "Aether Hub";
-        settings.Width = 1280;
-        settings.Height = 720;
-        settings.VSync = true;
-
         aether::EngineSpecification spec;
         spec.Name = "Aether Editor";
-        spec.Type = aether::ApplicationType::Editor;
+        spec.Type = aether::ApplicationType::Client;
+        spec.Width = 1280;
+        spec.Height = 720;
 
-        auto engine = std::make_unique<aether::Engine>(spec, settings);
-        auto world = std::make_unique<aether::World>("Editor World");
-        engine->SetWorld(std::move(world));
+        auto engine = std::make_unique<aether::Engine>(spec);
 
         // 1. Push ImGui Overlay
         auto* imguiLayer = new aether::ImGuiLayer();

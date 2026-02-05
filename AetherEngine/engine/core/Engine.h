@@ -20,12 +20,10 @@ namespace aether {
      * Defines the runtime mode of the engine.
      * - Client: Standard game with Rendering, Audio, and Input polling.
      * - Server: Headless authoritative simulation. No Window, No GPU context.
-	 * - Editor: Editing and creating projects; includes rendering and input.
      */
     enum class ApplicationType {
         Client = 0,
-        Server = 1,
-		Editor = 2
+        Server = 1
     };
 
     struct EngineSpecification {
@@ -40,7 +38,7 @@ namespace aether {
      * Engine
      * The root lifecycle manager for the application.
      * Handles the main loop, window creation, layer stack management, and system initialization.
-     * * * ARCHITECTURAL NOTE:
+     * * ARCHITECTURAL NOTE:
      * The Engine ensures that the Simulation Loop (Fixed-Step) and Presentation Loop (Variable-Step)
      * are driven correctly. It acts as the host for the "World" (Scene).
      */
@@ -54,12 +52,18 @@ namespace aether {
         void OnEvent(Event& e);
 
         void PushLayer(Layer* layer);
-        void PushOverlay(Layer* layer);
+        void PushOverlay(Layer* overlay);
         void PopLayer(Layer* layer);
-        void PopOverlay(Layer* layer);
+        void PopOverlay(Layer* overlay);
 
         Window& GetWindow() { return *m_Window; }
         ImGuiLayer* GetImGuiLayer() { return m_ImGuiLayer; }
+
+        /**
+         * SetImGuiLayer: Allows editor to register its ImGui layer for Begin/End calls
+         * Used by Editor main.cpp to ensure proper ImGui context management
+         */
+        void SetImGuiLayer(ImGuiLayer* layer) { m_ImGuiLayer = layer; }
 
         static Engine& Get() { return *s_Instance; }
         ApplicationType GetAppType() const { return m_Spec.Type; }

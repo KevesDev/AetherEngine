@@ -1,5 +1,7 @@
 #pragma once
 
+#pragma once
+
 #include "Layer.h"
 #include "../../events/ApplicationEvent.h"
 #include "../../events/KeyEvent.h"
@@ -20,6 +22,10 @@ namespace aether {
         void Begin();
         void End();
 
+        /**
+         * SetBlockEvents: Controls whether ImGui consumes input events
+         * Used by EditorLayer to prevent scene manipulation when UI is focused
+         */
         void SetBlockEvents(bool block) { m_BlockEvents = block; }
 
     private:

@@ -8,7 +8,7 @@
 #include "../../engine/core/Engine.h"
 #include "../../engine/core/Log.h"
 #include "../../engine/asset/AssetManager.h"
-#include "../../engine/ecs/Components.h" // Fixes TagComponent undefined
+#include "../../engine/ecs/Components.h"
 
 #include <glm/gtc/matrix_transform.hpp>
 #include <glm/gtc/type_ptr.hpp>
@@ -16,8 +16,6 @@
 
 namespace aether {
 
-    // Fix: EditorCamera constructor mismatch. 
-    // Assuming EditorCamera() defaults are acceptable or SetViewportSize handles it.
     EditorLayer::EditorLayer()
         : Layer("EditorLayer")
     {
@@ -25,24 +23,17 @@ namespace aether {
 
     void EditorLayer::OnAttach()
     {
-        // Fix: AssetManager API. Assuming Get<T> based on typical patterns.
         m_CheckerboardTexture = AssetManager::Get<Texture2D>("EngineContent/textures/T_checkerboard.png");
 
-        // Fix: Framebuffer API. 
-        // If initializer list for Attachments fails, likely requires distinct format assignment or legacy spec.
         FramebufferSpecification fbSpec;
         fbSpec.Width = 1280;
         fbSpec.Height = 720;
-        // Assuming FramebufferTextureFormat is an enum, ensuring vector is constructed correctly.
         fbSpec.Attachments = { FramebufferTextureFormat::RGBA8, FramebufferTextureFormat::RED_INTEGER, FramebufferTextureFormat::Depth };
 
-        m_Framebuffer = Framebuffer::Create(fbSpec); // Use Create factory instead of make_shared directly if abstract
+        m_Framebuffer = Framebuffer::Create(fbSpec);
 
         m_ActiveScene = std::make_shared<Scene>();
 
-        // Fix: SetContext signature mismatch. If it expects shared_ptr, this is fine. 
-        // If it expects raw pointer, use m_ActiveScene.get().
-        // Standard panels usually take the shared_ptr to share ownership/lifecycle.
         m_SceneHierarchyPanel.SetContext(m_ActiveScene);
 
         m_EditorCamera = EditorCamera(30.0f, 1.778f, 0.1f, 1000.0f);
@@ -69,7 +60,6 @@ namespace aether {
         glClearColor(0.1f, 0.1f, 0.1f, 1.0f);
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
-        // Fix: ClearAttachment API. Ensure 1 is the correct index for RED_INTEGER
         m_Framebuffer->ClearAttachment(1, -1);
 
         switch (m_SceneState)
@@ -84,7 +74,7 @@ namespace aether {
         }
         case SceneState::Play:
         {
-            m_ActiveScene->OnUpdateSimulation(ts.GetSeconds()); // Pass float seconds
+            m_ActiveScene->OnUpdateSimulation(ts.GetSeconds());
             glm::mat4 viewProj = m_ActiveScene->GetPrimaryCameraViewProjection();
             m_ActiveScene->OnRender(viewProj);
             break;
@@ -102,8 +92,8 @@ namespace aether {
         if (mouseX >= 0 && mouseY >= 0 && mouseX < (int)viewportSize.x && mouseY < (int)viewportSize.y)
         {
             int pixelData = m_Framebuffer->ReadPixel(1, mouseX, mouseY);
-            // Fix: Entity constructor requires Scene*
-            m_HoveredEntity = pixelData == -1 ? Entity() : Entity((EntityID)pixelData, m_ActiveScene.get());
+            // FIX: Entity constructor requires (EntityID, Registry*) not (EntityID, Scene*)
+            m_HoveredEntity = pixelData == -1 ? Entity() : Entity((EntityID)pixelData, &m_ActiveScene->GetRegistry());
         }
 
         m_Framebuffer->Unbind();
@@ -123,7 +113,8 @@ namespace aether {
         m_ViewportFocused = ImGui::IsWindowFocused();
         m_ViewportHovered = ImGui::IsWindowHovered();
 
-        Application::Get().GetImGuiLayer()->BlockEvents(!m_ViewportFocused && !m_ViewportHovered);
+        // FIX: Application::Get() -> Engine::Get()
+        Engine::Get().GetImGuiLayer()->SetBlockEvents(!m_ViewportFocused && !m_ViewportHovered);
 
         ImVec2 viewportPanelSize = ImGui::GetContentRegionAvail();
         m_ViewportSize = { viewportPanelSize.x, viewportPanelSize.y };
@@ -149,7 +140,6 @@ namespace aether {
         ImGui::Text("Draw Calls: %d", stats.DrawCalls);
         ImGui::Text("Quads: %d", stats.QuadCount);
 
-        // TagComponent is now defined
         if (m_HoveredEntity && m_HoveredEntity.HasComponent<TagComponent>())
             ImGui::Text("Hovered Entity: %s", m_HoveredEntity.GetComponent<TagComponent>().Tag.c_str());
         else

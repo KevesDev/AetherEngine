@@ -126,4 +126,16 @@ namespace aether {
         int location = glGetUniformLocation(m_RendererID, name.c_str());
         glUniform4f(location, v0, v1, v2, v3);
     }
+
+    void Shader::SetInt(const std::string& name, int value)
+    {
+        int location = glGetUniformLocation(m_RendererID, name.c_str());
+        glUniform1i(location, value);
+    }
+
+    void Shader::SetIntArray(const std::string& name, int* values, uint32_t count)
+    {
+        int location = glGetUniformLocation(m_RendererID, name.c_str());
+        glUniform1iv(location, count, values);
+    }
 }

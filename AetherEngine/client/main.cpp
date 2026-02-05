@@ -2,6 +2,7 @@
 #include "../engine/core/Config.h"
 #include "../engine/core/Log.h"
 #include "../engine/scene/SceneSerializer.h"
+#include "../engine/scene/Scene.h"
 #include "../engine/core/VFS.h"
 #include <iostream>
 #include <memory>
@@ -28,10 +29,16 @@ int main(int argc, char* argv[])
     EngineSpecification spec;
     spec.Name = "Aether Client";
     spec.Type = ApplicationType::Client;
+    spec.Width = windowSettings.Width;
+    spec.Height = windowSettings.Height;
 
-    auto engine = std::make_unique<Engine>(spec, windowSettings);
+    auto engine = std::make_unique<Engine>(spec);
 
-    // 3. Load the Startup Scene
+    // 3. Load the Startup Scene (Optional)
+    // NOTE: The Scene is now managed by the application layer, not the Engine core.
+    // This maintains the "Black Box" principle - the Engine doesn't know about Scenes.
+    std::shared_ptr<Scene> activeScene = nullptr;
+
     if (!startupScenePath.empty()) {
         // Ensure path logic is consistent (add /assets/ if the JSON didn't include it)
         std::string scenePath = startupScenePath;
@@ -43,10 +50,15 @@ int main(int argc, char* argv[])
             AETHER_CORE_ERROR("Startup scene not found or empty: {0}", scenePath);
         }
         else {
-            auto world = std::make_unique<World>("Runtime World");
-            SceneSerializer serializer(world->GetScene());
-            serializer.Deserialize(scenePath);
-            engine->SetWorld(std::move(world));
+            activeScene = std::make_shared<Scene>();
+            SceneSerializer serializer(activeScene);
+
+            // Convert VFS path to physical path for deserialization
+            std::filesystem::path physicalPath;
+            if (VFS::Resolve(scenePath, physicalPath)) {
+                serializer.Deserialize(physicalPath);
+                AETHER_CORE_INFO("Client: Loaded startup scene from {0}", scenePath);
+            }
         }
     }
     else {

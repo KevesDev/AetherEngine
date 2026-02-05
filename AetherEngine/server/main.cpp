@@ -1,25 +1,24 @@
 #include <iostream>
-#include "../core/Engine.h"
-#include "../core/EngineVersion.h"
-#include "../core/Log.h"
+#include "../engine/core/Engine.h"
+#include "../engine/core/EngineVersion.h"
+#include "../engine/core/Log.h"
 
 int main()
 {
-    aether::Log::Write(aether::LogLevel::Info, "Aether Dedicated Server starting up...");
+    aether::Log::Init();
+    AETHER_CORE_INFO("Aether Dedicated Server starting up...");
 
     // 1. ENGINE SPECIFICATION
     // The Type::Server flag tells the Engine constructor to run Headless (No Window).
     aether::EngineSpecification spec;
     spec.Name = "Aether Server";
     spec.Type = aether::ApplicationType::Server;
+    spec.Width = 0;  // Ignored in headless mode
+    spec.Height = 0; // Ignored in headless mode
 
-    // 2. WINDOW SETTINGS
-    // We pass default settings. The Engine constructor will see 'Type::Server' 
-    // and skip Window creation, so these values are effectively ignored.
-    aether::WindowSettings settings;
-
-    // 3. START ENGINE
-    aether::Engine engine(spec, settings);
+    // 2. START ENGINE
+    // Note: Server mode does not require WindowProps - the Engine handles headless initialization
+    aether::Engine engine(spec);
     engine.Run();
 
     return 0;
