@@ -11,7 +11,7 @@
 #include "../../engine/ecs/Components.h"
 #include "../panels/TextureViewerPanel.h"
 #include "../../engine/core/VFS.h"
-#include "../EditorResources.h" // [Fix] Include Resources Header
+#include "../EditorResources.h"
 
 #include <glm/gtc/matrix_transform.hpp>
 #include <glm/gtc/type_ptr.hpp>
@@ -26,7 +26,7 @@ namespace aether {
 
     void EditorLayer::OnAttach()
     {
-        // [Fix] Initialize Editor Resources (Icons, Fonts) so they aren't NULL
+        // Initialize Editor Resources (Icons, Fonts) to ensure they are available
         EditorResources::Init();
 
         // Manually resolve the engine asset path to bypass project-scope restrictions
@@ -73,22 +73,40 @@ namespace aether {
 
         // Wire up the Content Browser Double-Click
         m_ContentBrowserPanel.SetOnAssetOpenedCallback([this](const std::filesystem::path& path) {
-            if (path.extension() == ".png" || path.extension() == ".jpg" || path.extension() == ".jpeg")
+            // Only process .aeth asset files
+            if (path.extension() == ".aeth")
             {
-                for (const auto& panel : m_AssetEditors) {
-                    if (panel->GetAssetPath() == path) {
-                        panel->SetFocus();
-                        return;
+                // Verify the asset type from the file header to ensure valid routing
+                AssetType type = AssetManager::GetAssetTypeFromExtension(path);
+
+                if (type == AssetType::Texture2D)
+                {
+                    // Check if an editor for this asset is already open
+                    for (const auto& panel : m_AssetEditors) {
+                        if (panel->GetAssetPath() == path) {
+                            panel->SetFocus();
+                            return;
+                        }
                     }
+                    // Create new Texture Viewer panel
+                    m_AssetEditors.push_back(std::make_shared<TextureViewerPanel>("Texture Viewer", path));
                 }
-                m_AssetEditors.push_back(std::make_shared<TextureViewerPanel>("Texture Viewer", path));
+                else if (type == AssetType::Scene)
+                {
+                    // Scenes open in the main viewport
+                    OpenScene(path);
+                }
+                else
+                {
+                    AETHER_CORE_WARN("EditorLayer: No editor registered for asset type or asset corrupted: {0}", path.string());
+                }
             }
+            // Raw files (png, jpg, etc) are ignored; we only open the processed .aeth asset
             });
     }
 
     void EditorLayer::OnDetach()
     {
-        // [Fix] Clean up resources
         EditorResources::Shutdown();
     }
 

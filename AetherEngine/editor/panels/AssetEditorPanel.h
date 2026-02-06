@@ -2,13 +2,10 @@
 
 #include <string>
 #include <filesystem>
-#include <functional>
 #include <imgui.h>
-#include "../../engine/core/UUID.h"
 
 namespace aether {
 
-    // Defines the outcome of a Save operation
     enum class EditorSaveResult
     {
         Success,
@@ -16,49 +13,44 @@ namespace aether {
         Cancelled
     };
 
+    /**
+     * AssetEditorPanel:
+     * Base class for all asset-specific editors.
+     * Manages the layout (Content View + Side Inspector), focus, and saving.
+     */
     class AssetEditorPanel
     {
     public:
-        AssetEditorPanel(const std::string& title, const std::filesystem::path& assetPath);
+        AssetEditorPanel(const std::string& title, const std::filesystem::path& assetPath)
+            : m_Title(title), m_AssetPath(assetPath) {
+        }
+
         virtual ~AssetEditorPanel() = default;
 
-        // Main update loop called by EditorLayer
         void OnImGuiRender();
 
-        // Requests the window to move to the front of the docking stack
-        void SetFocus() { m_RequestFocus = true; }
-
-        // Forces the window to close (ignoring dirty state), used during engine shutdown
-        void ForceClose() { m_IsOpen = false; }
-
-        // State Queries
+        void SetFocus() { m_FocusRequested = true; }
         bool IsOpen() const { return m_IsOpen; }
-        bool IsDirty() const { return m_IsDirty; }
         const std::filesystem::path& GetAssetPath() const { return m_AssetPath; }
 
     protected:
-        // Contract: Derived classes MUST implement the UI rendering logic here
+        // Main view area (Left Panel). Implemented by derived class.
         virtual void RenderContent() = 0;
 
-        // Contract: Derived classes MUST implement the serialization logic here
-        // Returns Success if the file was written, Failure otherwise.
-        virtual EditorSaveResult Save() = 0;
+        // Tool/Settings area (Right Panel). Implemented by derived class.
+        // Optional: Default implementation renders nothing.
+        virtual void RenderInspector() {}
 
-        // Helper for child classes to mark the asset as modified
-        void SetDirty(bool dirty = true) { m_IsDirty = dirty; }
-
-    private:
-        void RenderUnsavedChangesModal();
+        virtual EditorSaveResult Save() { return EditorSaveResult::Success; }
+        void SetDirty(bool dirty) { m_IsDirty = dirty; }
 
     protected:
+        std::string m_Title;
         std::filesystem::path m_AssetPath;
-        std::string m_Title; // The tool name (e.g. "Texture Viewer")
-
         bool m_IsOpen = true;
         bool m_IsDirty = false;
-        bool m_RequestFocus = true; // Focus on open
+        bool m_FocusRequested = false;
 
-        // Internal state for the modal popup
-        bool m_ShowUnsavedModal = false;
+        ImVec2 m_DefaultWindowSize = { 600.0f, 400.0f };
     };
 }

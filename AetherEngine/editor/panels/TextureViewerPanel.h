@@ -14,6 +14,8 @@ namespace aether {
 
     protected:
         virtual void RenderContent() override;
+        // Renders the side panel with Zoom and Pixel Art controls
+        virtual void RenderInspector() override;
         virtual EditorSaveResult Save() override;
 
     private:
