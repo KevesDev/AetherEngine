@@ -11,6 +11,7 @@
 #include "../../engine/ecs/Components.h"
 #include "../panels/TextureViewerPanel.h"
 #include "../../engine/core/VFS.h"
+#include "../EditorResources.h" // [Fix] Include Resources Header
 
 #include <glm/gtc/matrix_transform.hpp>
 #include <glm/gtc/type_ptr.hpp>
@@ -25,6 +26,9 @@ namespace aether {
 
     void EditorLayer::OnAttach()
     {
+        // [Fix] Initialize Editor Resources (Icons, Fonts) so they aren't NULL
+        EditorResources::Init();
+
         // Manually resolve the engine asset path to bypass project-scope restrictions
         std::filesystem::path checkerPath;
         bool loaded = false;
@@ -69,10 +73,8 @@ namespace aether {
 
         // Wire up the Content Browser Double-Click
         m_ContentBrowserPanel.SetOnAssetOpenedCallback([this](const std::filesystem::path& path) {
-            // Check for Texture extensions
             if (path.extension() == ".png" || path.extension() == ".jpg" || path.extension() == ".jpeg")
             {
-                // Prevent duplicate windows
                 for (const auto& panel : m_AssetEditors) {
                     if (panel->GetAssetPath() == path) {
                         panel->SetFocus();
@@ -86,6 +88,8 @@ namespace aether {
 
     void EditorLayer::OnDetach()
     {
+        // [Fix] Clean up resources
+        EditorResources::Shutdown();
     }
 
     void EditorLayer::OnUpdate(TimeStep ts)
@@ -367,11 +371,8 @@ namespace aether {
         {
             if (pathStr.empty()) continue;
 
-            // CRITICAL FIX: Wrap import logic in try/catch to prevent crashes from escaping
-            // and terminating the application without logging.
             try {
                 std::filesystem::path sourcePath(pathStr);
-
                 if (!std::filesystem::exists(sourcePath)) {
                     AETHER_CORE_WARN("OnFileDrop: Dropped file does not exist: {0}", pathStr);
                     continue;
@@ -381,7 +382,6 @@ namespace aether {
 
                 if (!std::filesystem::exists(destPath)) {
                     std::filesystem::copy_file(sourcePath, destPath);
-                    // This is likely where the previous crash occurred (inside Import logic)
                     AssetManager::ImportSourceFile(destPath);
                     AETHER_CORE_INFO("Imported: {0}", destPath.string());
                 }
@@ -451,5 +451,4 @@ namespace aether {
     {
         AETHER_CORE_WARN("SaveSceneAs (Dialog) unavailable.");
     }
-
 }

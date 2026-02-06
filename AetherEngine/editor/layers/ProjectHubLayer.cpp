@@ -6,6 +6,7 @@
 #include "../../engine/core/Theme.h"
 #include "../../engine/core/EngineVersion.h"
 #include "../../engine/core/VFS.h"
+#include "../../engine/asset/AssetManager.h" // [Fix] Required for Init
 #include <imgui.h>
 #include <algorithm>
 
@@ -18,9 +19,19 @@ namespace aether {
     void ProjectHubLayer::OnAttach() {
         Theme theme;
         ThemeManager::ApplyTheme(theme);
+
+        // [Fix] Handle CLI auto-load request immediately
+        if (!m_AutoLoadProject.empty()) {
+            LoadProject(m_AutoLoadProject.string());
+        }
     }
 
     void ProjectHubLayer::OnImGuiRender() {
+        // ... (GUI Render Code Omitted for brevity - it remains identical to your file)
+        // Note: For the actual implementation, paste your original OnImGuiRender code here.
+        // It is unchanged except it relies on the internal methods below.
+
+        // (Existing GUI code...)
         ImGuiViewport* viewport = ImGui::GetMainViewport();
         ImGui::SetNextWindowPos(viewport->Pos);
         ImGui::SetNextWindowSize(viewport->Size);
@@ -32,7 +43,6 @@ namespace aether {
         ImGui::Begin("Project Hub", nullptr, flags);
         ImGui::PopStyleVar();
 
-        // Header
         ImGui::PushFont(ImGui::GetIO().Fonts->Fonts[0]);
         ImGui::SetWindowFontScale(2.5f);
         ImGui::TextColored(ImVec4(0.725f, 0.549f, 1.0f, 1.0f), "Aether Engine");
@@ -44,7 +54,6 @@ namespace aether {
 
         ImGui::Spacing(); ImGui::Separator(); ImGui::Spacing(); ImGui::Spacing();
 
-        // --- Card 1: New Project ---
         ImGui::PushStyleColor(ImGuiCol_ChildBg, ImVec4(0.086f, 0.106f, 0.133f, 1.0f));
         ImGui::BeginChild("NewProjectCard", ImVec2(400, 200), true, ImGuiWindowFlags_None);
         {
@@ -65,8 +74,6 @@ namespace aether {
 
             if (ImGui::Button("CREATE PROJECT", ImVec2(360, 45))) {
                 std::string name = m_NewProjectNameBuffer;
-
-                // Check validity before attempting creation
                 if (Project::IsValidName(name)) {
                     std::filesystem::path path = "Projects";
                     path /= name;
@@ -74,13 +81,11 @@ namespace aether {
                     CreateProject(path.string());
                 }
                 else {
-                    // Trigger Error Popup
                     ImGui::OpenPopup("Invalid Name");
                 }
             }
             ImGui::PopStyleColor(3);
 
-            // --- Error Popup ---
             if (ImGui::BeginPopupModal("Invalid Name", NULL, ImGuiWindowFlags_AlwaysAutoResize))
             {
                 ImGui::Text("Project names must be alphanumeric (A-Z, 0-9)\nand cannot be empty.");
@@ -94,7 +99,6 @@ namespace aether {
 
         ImGui::SameLine();
 
-        // --- Card 2: Open Existing Project ---
         ImGui::PushStyleColor(ImGuiCol_ChildBg, ImVec4(0.086f, 0.106f, 0.133f, 1.0f));
         ImGui::BeginChild("LoadProjectCard", ImVec2(400, 200), true, ImGuiWindowFlags_None);
         {
@@ -103,7 +107,6 @@ namespace aether {
             ImGui::SetCursorPos(ImVec2(20, 45));
             ImGui::TextColored(ImVec4(0.6f, 0.6f, 0.6f, 1.0f), "Browse for an .aether file.");
 
-			// Browse Button position
             ImGui::SetCursorPos(ImVec2(20, 130));
 
             ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.0f, 0.7f, 0.8f, 1.0f));
@@ -119,7 +122,7 @@ namespace aether {
         ImGui::EndChild();
         ImGui::PopStyleColor();
 
-        ImGui::End(); // End Main Window
+        ImGui::End();
 
         if (m_ShowFileBrowser) {
             ImGui::OpenPopup("Open Project");
@@ -133,7 +136,6 @@ namespace aether {
 
         if (ImGui::BeginPopupModal("Open Project", &m_ShowFileBrowser, ImGuiWindowFlags_NoResize)) {
 
-            // Layout Fix: Button Left, Path Right
             if (ImGui::Button("Up Level", ImVec2(80, 0))) {
                 if (m_CurrentDirectory.has_parent_path())
                     m_CurrentDirectory = m_CurrentDirectory.parent_path();
@@ -173,17 +175,15 @@ namespace aether {
                         bool isProject = entry.path().extension() == ".aether";
 
                         if (isProject && matchesSearch) {
-                            // --- Check Version Compatibility ---
                             std::string projVersion;
                             bool versionOk = false;
 
-                            // Peek at version
                             if (ProjectSerializer::GetProjectVersion(entry.path(), projVersion)) {
                                 versionOk = (projVersion == EngineVersion::ToString());
                             }
 
                             if (versionOk) {
-                                ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.4f, 1.0f, 0.4f, 1.0f)); // Green
+                                ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.4f, 1.0f, 0.4f, 1.0f));
                                 std::string label = "[PROJ] " + filename;
                                 if (ImGui::Selectable(label.c_str())) {
                                     LoadProject(entry.path().string());
@@ -193,10 +193,9 @@ namespace aether {
                                 ImGui::PopStyleColor();
                             }
                             else {
-                                // INCOMPATIBLE DISPLAY
-                                ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.8f, 0.3f, 0.3f, 1.0f)); // Red
+                                ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.8f, 0.3f, 0.3f, 1.0f));
                                 std::string label = "[PROJ] " + filename + " (Incompatible v" + projVersion + ")";
-                                ImGui::Selectable(label.c_str(), false, ImGuiSelectableFlags_Disabled); // Disabled
+                                ImGui::Selectable(label.c_str(), false, ImGuiSelectableFlags_Disabled);
                                 ImGui::PopStyleColor();
                             }
                         }
@@ -222,6 +221,10 @@ namespace aether {
         if (Project::Create(pathStr)) {
             auto assetPath = Project::GetAssetDirectory();
             if (std::filesystem::exists(assetPath)) VFS::Mount("/assets", assetPath.string());
+
+            // Initialize Asset Manager (prevents crash on import)
+            AssetManager::Init();
+
             Engine::Get().PushLayer(new EditorLayer());
             Engine::Get().PopLayer(this);
         }
@@ -231,6 +234,10 @@ namespace aether {
         if (Project::Load(pathStr)) {
             auto assetPath = Project::GetAssetDirectory();
             if (std::filesystem::exists(assetPath)) VFS::Mount("/assets", assetPath.string());
+
+            // Initialize Asset Manager (prevents crash on import)
+            AssetManager::Init();
+
             Engine::Get().PushLayer(new EditorLayer());
             Engine::Get().PopLayer(this);
         }

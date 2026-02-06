@@ -59,12 +59,12 @@ namespace aether {
                 return std::make_shared<Texture2D>(physicalPath.string());
             }
             catch (const std::exception& e) {
-                AETHER_CORE_ERROR("EditorResources: Caught exception loading '{0}': {1}", virtualPath, e.what());
+                AETHER_CORE_ERROR("EditorResources: Exception loading '{0}': {1}", virtualPath, e.what());
                 return nullptr;
             }
         }
 
-        AETHER_CORE_ERROR("EditorResources: Could not resolve virtual path: {}", virtualPath);
+        AETHER_CORE_ERROR("EditorResources: Could not resolve path: {}", virtualPath);
         return nullptr;
     }
 }

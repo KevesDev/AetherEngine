@@ -5,12 +5,8 @@
 #include "../engine/core/Log.h"
 #include "../engine/core/Config.h"
 #include "../engine/core/VFS.h"
-#include "../engine/project/Project.h" 
-#include "layers/EditorLayer.h"
+#include "../engine/asset/AssetManager.h"
 #include "layers/ProjectHubLayer.h" 
-#include "../engine/scene/Scene.h"
-#include "../engine/scene/SceneSerializer.h"
-#include "../engine/asset/AssetManager.h" // Required for AssetManager::Init
 
 int main(int argc, char* argv[])
 {
@@ -18,21 +14,12 @@ int main(int argc, char* argv[])
 
     try {
         AETHER_CORE_TRACE("Startup: Initializing VFS...");
+        // Mount Engine Content
         if (std::filesystem::exists("EngineContent")) {
             aether::VFS::Mount("/engine", "EngineContent");
         }
         else {
-            AETHER_CORE_CRITICAL("CRITICAL MISSING DATA: 'EngineContent' folder not found. Working Dir: {}", std::filesystem::current_path().string());
-        }
-
-        std::filesystem::path projectPath;
-        bool openHub = true;
-
-        if (argc > 1) {
-            projectPath = argv[1];
-            if (std::filesystem::exists(projectPath)) {
-                openHub = false;
-            }
+            AETHER_CORE_CRITICAL("CRITICAL MISSING DATA: 'EngineContent' folder not found.");
         }
 
         aether::EngineSpecification spec;
@@ -44,33 +31,19 @@ int main(int argc, char* argv[])
         AETHER_CORE_TRACE("Startup: Creating Engine instance...");
         auto engine = std::make_unique<aether::Engine>(spec);
 
-        // Push Logic Layers
-        if (openHub) {
-            AETHER_CORE_TRACE("Startup: Launching Project Hub");
-            engine->PushLayer(new aether::ProjectHubLayer());
-        }
-        else {
-            AETHER_CORE_TRACE("Startup: Loading Project from {}", projectPath.string());
-            auto activeProject = aether::Project::Load(projectPath);
-            if (activeProject) {
-                auto assetPath = aether::Project::GetAssetDirectory();
-                if (std::filesystem::exists(assetPath)) {
-                    aether::VFS::Mount("/assets", assetPath.string());
+        // Centralized Logic: Always push Hub. 
+        // If CLI args exist, pass them to Hub for auto-loading.
+        auto* hubLayer = new aether::ProjectHubLayer();
 
-                    // [FIX] Initialize AssetManager (Creates the AssetLibrary)
-                    // This must happen AFTER the project is loaded and VFS is mounted
-                    AETHER_CORE_TRACE("Startup: Initializing Asset Manager...");
-                    aether::AssetManager::Init();
-                }
-
-                AETHER_CORE_TRACE("Startup: Pushing Editor Layer...");
-                engine->PushLayer(new aether::EditorLayer());
-            }
-            else {
-                AETHER_CORE_ERROR("Failed to load project from args: {}", projectPath.string());
-                engine->PushLayer(new aether::ProjectHubLayer());
+        if (argc > 1) {
+            std::filesystem::path projectPath = argv[1];
+            if (std::filesystem::exists(projectPath)) {
+                AETHER_CORE_TRACE("Startup: Auto-loading project from CLI args: {}", projectPath.string());
+                hubLayer->SetAutoLoadProject(projectPath);
             }
         }
+
+        engine->PushLayer(hubLayer);
 
         AETHER_CORE_INFO("Aether Engine Initialized. Starting Loop...");
         engine->Run();
@@ -88,7 +61,6 @@ int main(int argc, char* argv[])
         return -1;
     }
 
-    // [FIX] Shutdown AssetManager on exit to prevent memory leaks/context issues
     aether::AssetManager::Shutdown();
     return 0;
 }
