@@ -45,6 +45,11 @@ namespace aether {
          */
         void SetPosition(int position) { m_CornerPosition = position; }
 
+        /**
+         * SetCornerPosition: Dynamically set the overlay position (e.g. from Editor viewport bounds)
+         */
+        void SetCornerPosition(float x, float y) { m_PosX = x; m_PosY = y; }
+
     private:
         /**
          * UpdateFrameHistory: Records frame time for graph rendering
@@ -81,6 +86,10 @@ namespace aether {
     private:
         bool m_Enabled = true;
         int m_CornerPosition = 1; // 0=TL, 1=TR, 2=BL, 3=BR
+
+        // Dynamic position coordinates
+        float m_PosX = 0.0f;
+        float m_PosY = 0.0f;
 
         // Frame timing data
         std::deque<float> m_FrameTimeHistory; // Last 120 frames

@@ -9,6 +9,8 @@
 #include "../../engine/core/Log.h"
 #include "../../engine/asset/AssetManager.h"
 #include "../../engine/ecs/Components.h"
+#include "../panels/TextureViewerPanel.h"
+#include "../../engine/core/VFS.h"
 
 #include <glm/gtc/matrix_transform.hpp>
 #include <glm/gtc/type_ptr.hpp>
@@ -23,7 +25,34 @@ namespace aether {
 
     void EditorLayer::OnAttach()
     {
-        m_CheckerboardTexture = AssetManager::Get<Texture2D>("EngineContent/textures/T_checkerboard.png");
+        // Manually resolve the engine asset path to bypass project-scope restrictions
+        std::filesystem::path checkerPath;
+        bool loaded = false;
+
+        if (VFS::Resolve("/engine/textures/T_checkerboard.png", checkerPath))
+        {
+            if (std::filesystem::exists(checkerPath))
+            {
+                m_CheckerboardTexture = std::make_shared<Texture2D>(checkerPath.string());
+                loaded = true;
+            }
+        }
+
+        // Fallback: Create a 1x1 white texture to prevent crashes if the file is missing
+        if (!loaded)
+        {
+            AETHER_CORE_WARN("EditorLayer: Failed to load checkerboard at '/engine/textures/T_checkerboard.png'. Using fallback.");
+
+            TextureSpecification spec;
+            spec.Width = 1;
+            spec.Height = 1;
+            spec.Format = ImageFormat::RGBA8;
+
+            m_CheckerboardTexture = std::make_shared<Texture2D>(spec);
+
+            uint32_t whiteData = 0xffffffff;
+            m_CheckerboardTexture->SetData(&whiteData, sizeof(uint32_t));
+        }
 
         FramebufferSpecification fbSpec;
         fbSpec.Width = 1280;
@@ -38,8 +67,21 @@ namespace aether {
 
         m_EditorCamera = EditorCamera(30.0f, 1.778f, 0.1f, 1000.0f);
 
-        // Link InspectorPanel to SceneHierarchyPanel for selection sync
-        // This will be handled via event callback in future iterations
+        // Wire up the Content Browser Double-Click
+        m_ContentBrowserPanel.SetOnAssetOpenedCallback([this](const std::filesystem::path& path) {
+            // Check for Texture extensions
+            if (path.extension() == ".png" || path.extension() == ".jpg" || path.extension() == ".jpeg")
+            {
+                // Prevent duplicate windows
+                for (const auto& panel : m_AssetEditors) {
+                    if (panel->GetAssetPath() == path) {
+                        panel->SetFocus();
+                        return;
+                    }
+                }
+                m_AssetEditors.push_back(std::make_shared<TextureViewerPanel>("Texture Viewer", path));
+            }
+            });
     }
 
     void EditorLayer::OnDetach()
@@ -103,22 +145,9 @@ namespace aether {
 
     void EditorLayer::SetupDockSpace()
     {
-        /**
-         * DockSpace Setup
-         *
-         * Establishes the root docking context for the editor.
-         * This allows ImGui to restore layout from editor.ini correctly.
-         *
-         * ARCHITECTURE:
-         * - Engine remains pure: it knows nothing about editor-specific layouts
-         * - EditorLayer manages its own docking structure
-         * - ImGui's built-in serialization handles persistence via editor.ini
-         */
-
         static bool dockspaceOpen = true;
         static ImGuiDockNodeFlags dockspace_flags = ImGuiDockNodeFlags_None;
 
-        // Configure window flags for fullscreen dockspace
         ImGuiWindowFlags window_flags = ImGuiWindowFlags_MenuBar | ImGuiWindowFlags_NoDocking;
 
         ImGuiViewport* viewport = ImGui::GetMainViewport();
@@ -133,7 +162,6 @@ namespace aether {
         window_flags |= ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove;
         window_flags |= ImGuiWindowFlags_NoBringToFrontOnFocus | ImGuiWindowFlags_NoNavFocus;
 
-        // Passthrough dockspace (allows docking into the background)
         if (dockspace_flags & ImGuiDockNodeFlags_PassthruCentralNode)
             window_flags |= ImGuiWindowFlags_NoBackground;
 
@@ -142,11 +170,9 @@ namespace aether {
         ImGui::PopStyleVar();
         ImGui::PopStyleVar(2);
 
-        // Create DockSpace
         ImGuiID dockspace_id = ImGui::GetID("AetherEditorDockSpace");
         ImGui::DockSpace(dockspace_id, ImVec2(0.0f, 0.0f), dockspace_flags);
 
-        // Menu Bar
         if (ImGui::BeginMenuBar())
         {
             if (ImGui::BeginMenu("File"))
@@ -166,35 +192,38 @@ namespace aether {
                 ImGui::Separator();
 
                 if (ImGui::MenuItem("Exit"))
-                    Engine::Get().OnEvent(WindowCloseEvent());
+                {
+                    WindowCloseEvent e;
+                    Engine::Get().OnEvent(e);
+                }
 
                 ImGui::EndMenu();
             }
 
             if (ImGui::BeginMenu("Settings"))
             {
-                if (ImGui::MenuItem("Network"))
+                bool perfEnabled = m_PerformanceOverlay.IsEnabled();
+                if (ImGui::MenuItem("Performance Overlay", nullptr, &perfEnabled))
                 {
-                    // Network settings window visibility handled below
+                    m_PerformanceOverlay.SetEnabled(perfEnabled);
                 }
+
+                if (ImGui::MenuItem("Renderer Stats", nullptr, &m_ShowRendererStats)) {}
+                if (ImGui::MenuItem("Network Overlay", nullptr, &m_ShowNetworkPanel)) {}
+
                 ImGui::EndMenu();
             }
 
             ImGui::EndMenuBar();
         }
 
-        ImGui::End(); // DockSpace
+        ImGui::End();
     }
 
     void EditorLayer::OnImGuiRender()
     {
-        // CRITICAL: Establish DockSpace FIRST before any other windows
-        // This allows ImGui to restore the saved layout from editor.ini
         SetupDockSpace();
 
-        // -------------------------------------------------------------------------
-        // Viewport Window (Central Docked Window)
-        // -------------------------------------------------------------------------
         ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2{ 0, 0 });
         ImGui::Begin("Viewport");
 
@@ -228,38 +257,11 @@ namespace aether {
         ImGui::End();
         ImGui::PopStyleVar();
 
-        // -------------------------------------------------------------------------
-        // Performance Overlay (Docked within Viewport bounds)
-        // -------------------------------------------------------------------------
-        {
-            ImVec2 viewportMin(m_ViewportBounds[0].x, m_ViewportBounds[0].y);
-            ImVec2 viewportMax(m_ViewportBounds[1].x, m_ViewportBounds[1].y);
+        m_PerformanceOverlay.SetCornerPosition(m_ViewportBounds[1].x - 10.0f, m_ViewportBounds[0].y + 10.0f);
+        m_PerformanceOverlay.OnImGuiRender();
 
-            ImGui::SetNextWindowPos(ImVec2(viewportMax.x - 10.0f, viewportMin.y + 10.0f), ImGuiCond_Always, ImVec2(1.0f, 0.0f));
-            ImGui::SetNextWindowBgAlpha(0.75f);
-
-            ImGuiWindowFlags overlayFlags =
-                ImGuiWindowFlags_NoDecoration |
-                ImGuiWindowFlags_AlwaysAutoResize |
-                ImGuiWindowFlags_NoSavedSettings |
-                ImGuiWindowFlags_NoFocusOnAppearing |
-                ImGuiWindowFlags_NoNav |
-                ImGuiWindowFlags_NoMove;
-
-            if (ImGui::Begin("Performance Overlay", nullptr, overlayFlags)) {
-                m_PerformanceOverlay.OnImGuiRender();
-            }
-            ImGui::End();
-        }
-
-        // -------------------------------------------------------------------------
-        // Editor Panels (Can be docked anywhere)
-        // -------------------------------------------------------------------------
-
-        // Scene Hierarchy
         m_SceneHierarchyPanel.OnImGuiRender();
 
-        // Inspector (bound to hierarchy selection)
         Entity selectedEntity = m_SceneHierarchyPanel.GetSelectedEntity();
         if (selectedEntity)
         {
@@ -267,26 +269,46 @@ namespace aether {
         }
         m_InspectorPanel.OnImGuiRender();
 
-        // Content Browser
         m_ContentBrowserPanel.OnImGuiRender();
 
-        // Renderer Stats (Development Tool)
-        ImGui::Begin("Renderer Stats");
-        auto stats = Renderer2D::GetStats();
-        ImGui::Text("Draw Calls: %d", stats.DrawCalls);
-        ImGui::Text("Quads: %d", stats.QuadCount);
+        for (auto it = m_AssetEditors.begin(); it != m_AssetEditors.end(); )
+        {
+            (*it)->OnImGuiRender();
+            if (!(*it)->IsOpen())
+                it = m_AssetEditors.erase(it);
+            else
+                ++it;
+        }
 
-        if (m_HoveredEntity && m_HoveredEntity.HasComponent<TagComponent>())
-            ImGui::Text("Hovered Entity: %s", m_HoveredEntity.GetComponent<TagComponent>().Tag.c_str());
-        else
-            ImGui::Text("Hovered Entity: None");
+        if (m_ShowRendererStats)
+        {
+            ImGui::Begin("Renderer Stats", &m_ShowRendererStats);
+            auto stats = Renderer2D::GetStats();
+            ImGui::Text("Draw Calls: %d", stats.DrawCalls);
+            ImGui::Text("Quads: %d", stats.QuadCount);
 
-        ImGui::End();
+            if (m_HoveredEntity && m_HoveredEntity.HasComponent<TagComponent>())
+                ImGui::Text("Hovered Entity: %s", m_HoveredEntity.GetComponent<TagComponent>().Tag.c_str());
+            else
+                ImGui::Text("Hovered Entity: None");
 
-        // Network Settings (Optional Window)
-        ImGui::Begin("Network Settings");
-        m_NetworkSettingsPanel.OnImGuiRender();
-        ImGui::End();
+            ImGui::End();
+        }
+
+        if (m_ShowNetworkPanel)
+        {
+            ImVec2 viewportMin(m_ViewportBounds[0].x, m_ViewportBounds[0].y);
+            ImGui::SetNextWindowPos(ImVec2(viewportMin.x + 10.0f, viewportMin.y + 10.0f), ImGuiCond_Always, ImVec2(0.0f, 0.0f));
+
+            ImGui::SetNextWindowBgAlpha(0.35f);
+            ImGuiWindowFlags overlayFlags = ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoDocking | ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_NoFocusOnAppearing | ImGuiWindowFlags_NoNav;
+
+            if (ImGui::Begin("Network Overlay", &m_ShowNetworkPanel, overlayFlags))
+            {
+                m_NetworkSettingsPanel.OnImGuiRender();
+            }
+            ImGui::End();
+        }
     }
 
     void EditorLayer::OnEvent(Event& e)
@@ -295,10 +317,10 @@ namespace aether {
         {
             m_EditorCamera.OnEvent(e);
         }
-
         EventDispatcher dispatcher(e);
         dispatcher.Dispatch<KeyPressedEvent>(AETHER_BIND_EVENT_FN(EditorLayer::OnKeyPressed));
         dispatcher.Dispatch<MouseButtonPressedEvent>(AETHER_BIND_EVENT_FN(EditorLayer::OnMouseButtonPressed));
+        dispatcher.Dispatch<FileDropEvent>(AETHER_BIND_EVENT_FN(EditorLayer::OnFileDrop));
     }
 
     bool EditorLayer::OnKeyPressed(KeyPressedEvent& e)
@@ -311,24 +333,18 @@ namespace aether {
         switch (e.GetKeyCode())
         {
         case Key::N:
-        {
             if (control) NewScene();
             break;
-        }
         case Key::O:
-        {
             if (control) OpenScene();
             break;
-        }
         case Key::S:
-        {
             if (control)
             {
                 if (shift) SaveSceneAs();
                 else SaveScene();
             }
             break;
-        }
         }
         return false;
     }
@@ -341,6 +357,49 @@ namespace aether {
                 m_SceneHierarchyPanel.SetSelectedEntity(m_HoveredEntity);
         }
         return false;
+    }
+
+    bool EditorLayer::OnFileDrop(FileDropEvent& e)
+    {
+        std::filesystem::path targetDir = m_ContentBrowserPanel.GetCurrentDirectory();
+
+        for (const auto& pathStr : e.GetPaths())
+        {
+            if (pathStr.empty()) continue;
+
+            // CRITICAL FIX: Wrap import logic in try/catch to prevent crashes from escaping
+            // and terminating the application without logging.
+            try {
+                std::filesystem::path sourcePath(pathStr);
+
+                if (!std::filesystem::exists(sourcePath)) {
+                    AETHER_CORE_WARN("OnFileDrop: Dropped file does not exist: {0}", pathStr);
+                    continue;
+                }
+
+                std::filesystem::path destPath = targetDir / sourcePath.filename();
+
+                if (!std::filesystem::exists(destPath)) {
+                    std::filesystem::copy_file(sourcePath, destPath);
+                    // This is likely where the previous crash occurred (inside Import logic)
+                    AssetManager::ImportSourceFile(destPath);
+                    AETHER_CORE_INFO("Imported: {0}", destPath.string());
+                }
+                else {
+                    AETHER_CORE_WARN("File already exists: {0}", destPath.string());
+                }
+            }
+            catch (const std::filesystem::filesystem_error& err) {
+                AETHER_CORE_ERROR("OnFileDrop FS Error: {0}", err.what());
+            }
+            catch (const std::exception& err) {
+                AETHER_CORE_ERROR("OnFileDrop Exception: {0}", err.what());
+            }
+            catch (...) {
+                AETHER_CORE_ERROR("OnFileDrop: Unknown Critical Failure");
+            }
+        }
+        return true;
     }
 
     void EditorLayer::NewScene()

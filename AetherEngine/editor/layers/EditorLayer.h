@@ -12,6 +12,13 @@
 #include "../../engine/input/KeyCodes.h"
 #include "../../engine/core/AetherTime.h"
 
+// Main editor panels
+#include "../panels/InspectorPanel.h"
+#include "../panels/ContentBrowserPanel.h"
+#include "../panels/AssetEditorPanel.h"
+#include "../panels/TextureViewerPanel.h"
+
+// Optional/toggleable panels
 #include "../panels/SceneHierarchyPanel.h"
 #include "../EditorCamera.h"
 #include "../panels/NetworkSettingsPanel.h"
@@ -40,6 +47,8 @@ namespace aether {
         bool OnKeyPressed(KeyPressedEvent& e);
         bool OnMouseButtonPressed(MouseButtonPressedEvent& e);
 
+        bool OnFileDrop(FileDropEvent& e);
+
         void NewScene();
         void OpenScene();
         void OpenScene(const std::filesystem::path& path);
@@ -61,7 +70,16 @@ namespace aether {
         std::filesystem::path m_EditorScenePath;
 
         SceneHierarchyPanel m_SceneHierarchyPanel;
+        InspectorPanel m_InspectorPanel;
+        ContentBrowserPanel m_ContentBrowserPanel;
         NetworkSettingsPanel m_NetworkSettingsPanel;
+
+        // Dynamic Asset Editors (Texture Viewers, etc.)
+        std::vector<std::shared_ptr<AssetEditorPanel>> m_AssetEditors;
+
+        // UI State (Default to false)
+        bool m_ShowNetworkPanel = false;
+        bool m_ShowRendererStats = false;
 
         std::shared_ptr<Framebuffer> m_Framebuffer;
         glm::vec2 m_ViewportSize = { 0.0f, 0.0f };

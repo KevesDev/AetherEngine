@@ -1,6 +1,7 @@
 #include "Texture.h"
 #include "../core/Log.h"
 #include <glad/glad.h>
+#include <stdexcept>
 
 #define STB_IMAGE_IMPLEMENTATION
 #include "../vendor/stb_image.h"
@@ -36,7 +37,6 @@ namespace aether {
         glCreateTextures(GL_TEXTURE_2D, 1, &m_RendererID);
         glTextureStorage2D(m_RendererID, 1, m_InternalFormat, m_Width, m_Height);
 
-        // Apply Specification Settings
         glTextureParameteri(m_RendererID, GL_TEXTURE_MIN_FILTER, m_Specification.MinFilter);
         glTextureParameteri(m_RendererID, GL_TEXTURE_MAG_FILTER, m_Specification.MagFilter);
 
@@ -45,72 +45,81 @@ namespace aether {
     }
 
     Texture2D::Texture2D(const std::string& path, const TextureSpecification& specification)
-        : m_Path(path), m_Specification(specification) // Copy defaults or overrides
+        : m_Path(path), m_Specification(specification)
     {
         int width, height, channels;
         stbi_set_flip_vertically_on_load(1);
         stbi_uc* data = stbi_load(path.c_str(), &width, &height, &channels, 0);
 
-        if (data)
+        if (!data)
         {
-            m_Width = width;
-            m_Height = height;
+            AETHER_CORE_ERROR("Texture2D: Failed to load image from '{0}'", path);
+            AETHER_CORE_ERROR("STB Reason: {0}", stbi_failure_reason());
+            throw std::runtime_error("Texture load failure");
+        }
 
-            // Update spec with actual file data
-            m_Specification.Width = width;
-            m_Specification.Height = height;
+        m_Width = width;
+        m_Height = height;
 
-            GLenum internalFormat = 0, dataFormat = 0;
-            if (channels == 4)
-            {
-                internalFormat = GL_RGBA8;
-                dataFormat = GL_RGBA;
-            }
-            else if (channels == 3)
-            {
-                internalFormat = GL_RGB8;
-                dataFormat = GL_RGB;
-            }
+        m_Specification.Width = width;
+        m_Specification.Height = height;
 
-            m_InternalFormat = internalFormat;
-            m_DataFormat = dataFormat;
+        GLenum internalFormat = 0, dataFormat = 0;
+        if (channels == 4)
+        {
+            internalFormat = GL_RGBA8;
+            dataFormat = GL_RGBA;
+        }
+        else if (channels == 3)
+        {
+            internalFormat = GL_RGB8;
+            dataFormat = GL_RGB;
+        }
 
-            AETHER_ASSERT(internalFormat & dataFormat, "Format not supported!");
+        m_InternalFormat = internalFormat;
+        m_DataFormat = dataFormat;
 
-            glCreateTextures(GL_TEXTURE_2D, 1, &m_RendererID);
-            glTextureStorage2D(m_RendererID, 1, internalFormat, m_Width, m_Height);
-
-            // Apply Settings from Specification (This handles Pixel Art vs Linear)
-            glTextureParameteri(m_RendererID, GL_TEXTURE_MIN_FILTER, m_Specification.MinFilter);
-            glTextureParameteri(m_RendererID, GL_TEXTURE_MAG_FILTER, m_Specification.MagFilter);
-
-            glTextureParameteri(m_RendererID, GL_TEXTURE_WRAP_S, m_Specification.WrapS);
-            glTextureParameteri(m_RendererID, GL_TEXTURE_WRAP_T, m_Specification.WrapT);
-
-            glTextureSubImage2D(m_RendererID, 0, 0, 0, m_Width, m_Height, dataFormat, GL_UNSIGNED_BYTE, data);
-
+        if (internalFormat == 0)
+        {
+            AETHER_CORE_ERROR("Texture2D: Unsupported format (channels: {0}) in '{1}'", channels, path);
             stbi_image_free(data);
+            throw std::runtime_error("Unsupported texture format");
         }
-        else
-        {
-            AETHER_CORE_ERROR("Failed to load texture at path: {}", path);
-        }
+
+        glCreateTextures(GL_TEXTURE_2D, 1, &m_RendererID);
+        glTextureStorage2D(m_RendererID, 1, internalFormat, m_Width, m_Height);
+
+        glTextureParameteri(m_RendererID, GL_TEXTURE_MIN_FILTER, m_Specification.MinFilter);
+        glTextureParameteri(m_RendererID, GL_TEXTURE_MAG_FILTER, m_Specification.MagFilter);
+
+        glTextureParameteri(m_RendererID, GL_TEXTURE_WRAP_S, m_Specification.WrapS);
+        glTextureParameteri(m_RendererID, GL_TEXTURE_WRAP_T, m_Specification.WrapT);
+
+        glTextureSubImage2D(m_RendererID, 0, 0, 0, m_Width, m_Height, dataFormat, GL_UNSIGNED_BYTE, data);
+
+        stbi_image_free(data);
     }
 
     Texture2D::~Texture2D()
     {
-        glDeleteTextures(1, &m_RendererID);
+        if (m_RendererID != 0)
+            glDeleteTextures(1, &m_RendererID);
     }
 
     void Texture2D::SetData(void* data, uint32_t size)
     {
         uint32_t bpp = m_DataFormat == GL_RGBA ? 4 : 3;
-        AETHER_ASSERT(size == m_Width * m_Height * bpp, "Data must be entire texture!");
+        if (size != m_Width * m_Height * bpp)
+        {
+            AETHER_CORE_ERROR("Texture2D::SetData: Data size mismatch! Expected {0}, got {1}", m_Width * m_Height * bpp, size);
+            return;
+        }
         glTextureSubImage2D(m_RendererID, 0, 0, 0, m_Width, m_Height, m_DataFormat, GL_UNSIGNED_BYTE, data);
     }
 
     void Texture2D::Bind(uint32_t slot) const
     {
-        glBindTextureUnit(slot, m_RendererID);
+        if (m_RendererID != 0)
+            glBindTextureUnit(slot, m_RendererID);
     }
 }

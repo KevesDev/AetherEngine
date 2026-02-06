@@ -1,228 +1,159 @@
 #include "TextureViewerPanel.h"
-#include "../../engine/core/Log.h"
-#include "../../engine/core/Theme.h"
-#include "../../engine/project/Project.h"
-#include "../../engine/asset/AssetMetadata.h"
-#include "../../engine/vendor/json.hpp"
-
+#include "../../engine/asset/AssetManager.h"
+#include "../../engine/asset/AssetMetadata.h" // Required for AssetHeader
+#include "../../engine/core/VFS.h"
 #include <imgui.h>
 #include <fstream>
 
-using json = nlohmann::json;
-
 namespace aether {
 
-    TextureViewerPanel::TextureViewerPanel(const std::string& title, const std::filesystem::path& assetPath)
-        : AssetEditorPanel(title, assetPath)
+    TextureViewerPanel::TextureViewerPanel(const std::string& title, const std::filesystem::path& path)
+        : AssetEditorPanel(title, path)
     {
-        LoadAsset();
+        // 1. Load the target asset
+        m_Texture = AssetManager::Get<Texture2D>(path.string());
+
+        // Initialize metadata state from the loaded asset
+        if (m_Texture)
+        {
+            // If MagFilter is Nearest, we treat it as "Pixel Art" mode
+            m_IsPixelArt = (m_Texture->GetSpecification().MagFilter == GL_NEAREST);
+        }
+
+        // 2. Load the background checkerboard (Safe Load)
+        m_CheckerboardTexture = AssetManager::Get<Texture2D>("/engine/textures/T_checkerboard.png");
+
+        // If that failed, try manual VFS resolution (Engine scope)
+        if (!m_CheckerboardTexture)
+        {
+            std::filesystem::path p;
+            if (VFS::Resolve("/engine/textures/T_checkerboard.png", p))
+            {
+                if (std::filesystem::exists(p))
+                    m_CheckerboardTexture = std::make_shared<Texture2D>(p.string());
+            }
+        }
+
+        // Fallback: Use TextureSpecification to create 1x1 texture
+        if (!m_CheckerboardTexture)
+        {
+            TextureSpecification spec;
+            spec.Width = 1;
+            spec.Height = 1;
+            spec.Format = ImageFormat::RGBA8;
+
+            m_CheckerboardTexture = std::make_shared<Texture2D>(spec);
+            uint32_t white = 0xffffffff;
+            m_CheckerboardTexture->SetData(&white, sizeof(uint32_t));
+        }
     }
 
-    void TextureViewerPanel::LoadAsset()
+    void TextureViewerPanel::RenderContent()
     {
-        // Resolve the relative path (stored in m_AssetPath) to an Absolute Path for IO
-        std::filesystem::path fullPath = Project::GetAssetDirectory() / m_AssetPath;
-
-        // 1. Open the .aeth wrapper file
-        std::ifstream stream(fullPath, std::ios::binary);
-        if (!stream) {
-            AETHER_CORE_ERROR("TextureViewer: Could not open asset file {}", fullPath.string());
-            return;
-        }
-
-        // 2. Read Header
-        AssetHeader header;
-        stream.read(reinterpret_cast<char*>(&header), sizeof(AssetHeader));
-
-        // 3. Parse JSON Body
-        json meta;
-        try {
-            stream >> meta;
-        }
-        catch (const json::parse_error& e) {
-            AETHER_CORE_ERROR("TextureViewer: JSON Parse Error: {}", e.what());
-            return;
-        }
-
-        // 4. Extract Settings
-        std::string sourceRel = meta.value("Source", "");
-        std::string filter = meta.value("Filter", "Linear");
-
-        m_IsPixelArt = (filter == "Nearest");
-
-        // 5. Load the Actual Texture Source
-        if (!sourceRel.empty())
+        // Toolbar
+        ImGui::BeginGroup();
+        if (ImGui::Checkbox("Pixel Art", &m_IsPixelArt))
         {
-            // The Source path in JSON is relative to Asset Dir, so we resolve it too
-            std::filesystem::path sourceFullPath = Project::GetAssetDirectory() / sourceRel;
+            SetDirty(true);
+        }
+        ImGui::SameLine();
+        ImGui::TextDisabled("| %s", m_AssetPath.filename().string().c_str());
+        ImGui::EndGroup();
 
-            TextureSpecification spec;
-            spec.MinFilter = m_IsPixelArt ? GL_NEAREST : GL_LINEAR;
-            spec.MagFilter = m_IsPixelArt ? GL_NEAREST : GL_LINEAR;
-            spec.WrapS = GL_REPEAT;
-            spec.WrapT = GL_REPEAT;
+        ImGui::Separator();
 
-            m_Texture = std::make_shared<Texture2D>(sourceFullPath.string(), spec);
+        // Preview
+        if (m_Texture && m_CheckerboardTexture)
+        {
+            ImVec2 viewportSize = ImGui::GetContentRegionAvail();
+
+            // Calculate aspect ratio to fit image within window
+            float aspect = (float)m_Texture->GetWidth() / (float)m_Texture->GetHeight();
+            ImVec2 size = viewportSize;
+
+            if (size.x / size.y > aspect)
+                size.x = size.y * aspect;
+            else
+                size.y = size.x / aspect;
+
+            // Draw Checkerboard Background
+            ImGui::SetCursorPos(ImGui::GetCursorStartPos());
+            ImGui::Image((void*)(uintptr_t)m_CheckerboardTexture->GetRendererID(), size, { 0, 1 }, { 1, 0 });
+
+            // Draw Actual Texture on top
+            ImGui::SetCursorPos(ImGui::GetCursorStartPos());
+            ImGui::Image((void*)(uintptr_t)m_Texture->GetRendererID(), size, { 0, 1 }, { 1, 0 });
+
+            // Tooltip
+            if (ImGui::IsItemHovered())
+            {
+                ImGui::BeginTooltip();
+                ImGui::Text("Dimensions: %dx%d", m_Texture->GetWidth(), m_Texture->GetHeight());
+                ImGui::Text("Path: %s", m_Texture->GetPath().c_str());
+                ImGui::EndTooltip();
+            }
+        }
+        else
+        {
+            ImGui::Text("Texture not loaded.");
         }
     }
 
     EditorSaveResult TextureViewerPanel::Save()
     {
-        // Resolve to Absolute Path for writing
-        std::filesystem::path fullPath = Project::GetAssetDirectory() / m_AssetPath;
+        if (!m_Texture) return EditorSaveResult::Failure;
 
-        // 1. Read existing header to preserve UUID
-        std::ifstream in(fullPath, std::ios::binary);
-        if (!in) return EditorSaveResult::Failure;
+        // 1. Prepare Metadata (TextureSpecification)
+        TextureSpecification spec = m_Texture->GetSpecification();
+        if (m_IsPixelArt)
+        {
+            spec.MinFilter = GL_NEAREST;
+            spec.MagFilter = GL_NEAREST;
+        }
+        else
+        {
+            spec.MinFilter = GL_LINEAR;
+            spec.MagFilter = GL_LINEAR;
+        }
+
+        // 2. Prepare Header (Maintain existing UUID)
+        if (!AssetManager::HasAsset(m_AssetPath))
+            return EditorSaveResult::Failure;
+
+        const auto& metadata = AssetManager::GetMetadata(m_AssetPath);
 
         AssetHeader header;
-        in.read(reinterpret_cast<char*>(&header), sizeof(AssetHeader));
+        header.AssetID = (uint64_t)metadata.Handle;
+        header.Type = AssetType::Texture2D;
+        header.Version = 1;
 
-        // Read existing JSON
-        json meta;
-        try {
-            in >> meta;
-        }
-        catch (...) {
+        // 3. Serialize to Disk (Binary Format: Header + Spec + SourcePath)
+        // Note: We write to the .aeth file, which AssetManager reads to load the texture.
+        std::ofstream fout(m_AssetPath, std::ios::binary);
+        if (!fout)
+        {
+            AETHER_CORE_ERROR("TextureViewer: Failed to open file for saving: {}", m_AssetPath.string());
             return EditorSaveResult::Failure;
         }
-        in.close();
 
-        // 2. Update Metadata
-        meta["Filter"] = m_IsPixelArt ? "Nearest" : "Linear";
+        // Write Header
+        fout.write(reinterpret_cast<const char*>(&header), sizeof(AssetHeader));
 
-        // 3. Write back to disk
-        std::ofstream out(fullPath, std::ios::binary | std::ios::trunc);
-        if (!out) return EditorSaveResult::Failure;
+        // Write Specification
+        fout.write(reinterpret_cast<const char*>(&spec), sizeof(TextureSpecification));
 
-        out.write(reinterpret_cast<char*>(&header), sizeof(AssetHeader));
+        // Write Source Path (Length + String)
+        // Use the texture's stored path to the raw image (e.g., "assets/textures/wood.png")
+        std::string sourcePath = m_Texture->GetPath();
+        size_t pathLen = sourcePath.size();
+        fout.write(reinterpret_cast<const char*>(&pathLen), sizeof(size_t));
+        fout.write(sourcePath.data(), pathLen);
 
-        std::string dump = meta.dump(4);
-        out.write(dump.c_str(), dump.size());
-        out.close();
+        fout.close();
 
-        // 4. Reload Texture to reflect changes
-        if (m_Texture) {
-            std::filesystem::path sourceFullPath = m_Texture->GetPath();
-
-            TextureSpecification spec;
-            spec.MinFilter = m_IsPixelArt ? GL_NEAREST : GL_LINEAR;
-            spec.MagFilter = m_IsPixelArt ? GL_NEAREST : GL_LINEAR;
-
-            m_Texture = std::make_shared<Texture2D>(sourceFullPath.string(), spec);
-        }
-
+        // Mark clean
         SetDirty(false);
+        AETHER_CORE_INFO("TextureViewer: Saved metadata for {}", m_AssetPath.string());
         return EditorSaveResult::Success;
-    }
-
-    void TextureViewerPanel::RenderContent()
-    {
-        // NEW: Set default size on first use (400x420)
-        // This works because we are inside the window's Begin()/End() scope from the base class
-        ImGui::SetWindowSize(ImVec2(400, 420), ImGuiCond_FirstUseEver);
-
-        if (!m_Texture) {
-            ImGui::TextColored(ImVec4(1, 0, 0, 1), "Error: Texture source not found or invalid.");
-            std::filesystem::path fullPath = Project::GetAssetDirectory() / m_AssetPath;
-            ImGui::TextWrapped("Attempted: %s", fullPath.string().c_str());
-            return;
-        }
-
-        RenderToolbar();
-        ImGui::Separator();
-        RenderPreview();
-    }
-
-    void TextureViewerPanel::RenderToolbar()
-    {
-        Theme theme;
-
-        // NEW: Save Button
-        ImGui::PushStyleColor(ImGuiCol_Button, theme.AccentPrimary);
-        if (ImGui::Button("Save")) {
-            Save();
-        }
-        ImGui::PopStyleColor();
-
-        ImGui::SameLine();
-        ImGui::TextDisabled("|");
-        ImGui::SameLine();
-
-        ImGui::AlignTextToFramePadding();
-        ImGui::TextColored(theme.TextMuted, "Zoom:");
-        ImGui::SameLine();
-
-        if (ImGui::Button("-")) m_Zoom = std::max(0.1f, m_Zoom - 0.1f);
-        ImGui::SameLine();
-
-        ImGui::SetNextItemWidth(100);
-        ImGui::SliderFloat("##zoom", &m_Zoom, 0.1f, 5.0f, "%.1fx");
-        ImGui::SameLine();
-
-        if (ImGui::Button("+")) m_Zoom = std::min(5.0f, m_Zoom + 0.1f);
-        ImGui::SameLine();
-
-        if (ImGui::Button("1:1")) m_Zoom = 1.0f;
-
-        ImGui::SameLine();
-        ImGui::TextDisabled("|");
-        ImGui::SameLine();
-
-        bool oldState = m_IsPixelArt;
-        if (ImGui::Checkbox("Pixel Art Preview", &m_IsPixelArt))
-        {
-            if (m_IsPixelArt != oldState) {
-                SetDirty(true);
-            }
-        }
-
-        if (ImGui::IsItemHovered()) {
-            ImGui::SetTooltip("Preview how this looks in a retro/pixel-art game (keeps edges sharp instead of blurry).");
-        }
-    }
-
-    void TextureViewerPanel::RenderPreview()
-    {
-        ImGui::BeginChild("TextureCanvas", ImVec2(0, 0), true, ImGuiWindowFlags_HorizontalScrollbar);
-
-        float width = (float)m_Texture->GetWidth() * m_Zoom;
-        float height = (float)m_Texture->GetHeight() * m_Zoom;
-
-        // Draw Checkerboard
-        ImDrawList* drawList = ImGui::GetWindowDrawList();
-        ImVec2 p = ImGui::GetCursorScreenPos();
-
-        ImU32 col1 = IM_COL32(60, 60, 60, 255);
-        ImU32 col2 = IM_COL32(40, 40, 40, 255);
-        float checkSize = 16.0f;
-
-        int numX = (int)(width / checkSize) + 1;
-        int numY = (int)(height / checkSize) + 1;
-
-        for (int y = 0; y < numY; y++)
-        {
-            for (int x = 0; x < numX; x++)
-            {
-                float xPos = x * checkSize;
-                float yPos = y * checkSize;
-
-                if (xPos >= width || yPos >= height) continue;
-
-                float xEnd = std::min(xPos + checkSize, width);
-                float yEnd = std::min(yPos + checkSize, height);
-
-                bool isWhite = (x + y) % 2 == 0;
-                drawList->AddRectFilled(
-                    ImVec2(p.x + xPos, p.y + yPos),
-                    ImVec2(p.x + xEnd, p.y + yEnd),
-                    isWhite ? col1 : col2
-                );
-            }
-        }
-
-        ImGui::Image((void*)(uintptr_t)m_Texture->GetRendererID(), { width, height }, { 0, 1 }, { 1, 0 });
-
-        ImGui::EndChild();
     }
 }

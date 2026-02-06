@@ -17,14 +17,8 @@ namespace aether {
         virtual EditorSaveResult Save() override;
 
     private:
-        void RenderToolbar();
-        void RenderPreview();
-
-        // Helper to load the .aeth metadata + source png
-        void LoadAsset();
-
-    private:
         std::shared_ptr<Texture2D> m_Texture;
+        std::shared_ptr<Texture2D> m_CheckerboardTexture;
 
         // Editor State
         float m_Zoom = 1.0f;

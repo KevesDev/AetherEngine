@@ -168,7 +168,6 @@ namespace aether {
         return AssetType::None;
     }
 
-    // --- Asset Factory Implementation ---
     std::shared_ptr<Texture2D> AssetManager::LoadTexture2D(const std::filesystem::path& assetPath)
     {
         std::ifstream stream(assetPath, std::ios::binary);
@@ -177,11 +176,9 @@ namespace aether {
             return nullptr;
         }
 
-        // Skip header
         AssetHeader header;
         stream.read(reinterpret_cast<char*>(&header), sizeof(AssetHeader));
 
-        // Parse metadata
         json meta;
         try {
             stream >> meta;
@@ -199,7 +196,6 @@ namespace aether {
 
         std::filesystem::path sourcePath = Project::GetAssetDirectory() / sourceRel;
 
-        // Build TextureSpecification from metadata
         TextureSpecification spec;
         std::string filter = meta.value("Filter", "Linear");
         spec.MinFilter = (filter == "Nearest") ? GL_NEAREST : GL_LINEAR;
@@ -209,6 +205,12 @@ namespace aether {
         spec.WrapS = (wrap == "Clamp") ? GL_CLAMP_TO_EDGE : GL_REPEAT;
         spec.WrapT = (wrap == "Clamp") ? GL_CLAMP_TO_EDGE : GL_REPEAT;
 
-        return std::make_shared<Texture2D>(sourcePath.string(), spec);
+        try {
+            return std::make_shared<Texture2D>(sourcePath.string(), spec);
+        }
+        catch (const std::exception& e) {
+            AETHER_CORE_ERROR("AssetManager: Failed to load texture '{0}'. Reason: {1}", sourceRel, e.what());
+            return nullptr;
+        }
     }
 }

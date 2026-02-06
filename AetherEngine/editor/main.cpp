@@ -10,12 +10,14 @@
 #include "layers/ProjectHubLayer.h" 
 #include "../engine/scene/Scene.h"
 #include "../engine/scene/SceneSerializer.h"
+#include "../engine/asset/AssetManager.h" // Required for AssetManager::Init
 
 int main(int argc, char* argv[])
 {
     aether::Log::Init();
 
     try {
+        AETHER_CORE_TRACE("Startup: Initializing VFS...");
         if (std::filesystem::exists("EngineContent")) {
             aether::VFS::Mount("/engine", "EngineContent");
         }
@@ -39,19 +41,29 @@ int main(int argc, char* argv[])
         spec.Width = 1280;
         spec.Height = 720;
 
+        AETHER_CORE_TRACE("Startup: Creating Engine instance...");
         auto engine = std::make_unique<aether::Engine>(spec);
 
         // Push Logic Layers
         if (openHub) {
+            AETHER_CORE_TRACE("Startup: Launching Project Hub");
             engine->PushLayer(new aether::ProjectHubLayer());
         }
         else {
+            AETHER_CORE_TRACE("Startup: Loading Project from {}", projectPath.string());
             auto activeProject = aether::Project::Load(projectPath);
             if (activeProject) {
                 auto assetPath = aether::Project::GetAssetDirectory();
                 if (std::filesystem::exists(assetPath)) {
                     aether::VFS::Mount("/assets", assetPath.string());
+
+                    // [FIX] Initialize AssetManager (Creates the AssetLibrary)
+                    // This must happen AFTER the project is loaded and VFS is mounted
+                    AETHER_CORE_TRACE("Startup: Initializing Asset Manager...");
+                    aether::AssetManager::Init();
                 }
+
+                AETHER_CORE_TRACE("Startup: Pushing Editor Layer...");
                 engine->PushLayer(new aether::EditorLayer());
             }
             else {
@@ -76,5 +88,7 @@ int main(int argc, char* argv[])
         return -1;
     }
 
+    // [FIX] Shutdown AssetManager on exit to prevent memory leaks/context issues
+    aether::AssetManager::Shutdown();
     return 0;
 }

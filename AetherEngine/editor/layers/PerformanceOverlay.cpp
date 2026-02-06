@@ -1,6 +1,7 @@
 #include "PerformanceOverlay.h"
 #include "../../engine/core/Theme.h"
 #include <algorithm>
+#include <cstdio> // For sprintf if needed by ImGui internal formatting
 
 namespace aether {
 
@@ -14,7 +15,9 @@ namespace aether {
         if (!m_Enabled)
             return;
 
-        // Update frame timing (real-time frame delta)
+        // -------------------------------------------------------------------------
+        // Logic Update (Frame Timing)
+        // -------------------------------------------------------------------------
         float deltaTime = (float)AetherTime::GetFrameDelta();
         UpdateFrameHistory(deltaTime);
 
@@ -36,7 +39,7 @@ namespace aether {
         }
 
         // -------------------------------------------------------------------------
-        // Render overlay window
+        // UI Rendering
         // -------------------------------------------------------------------------
         ImGuiWindowFlags window_flags =
             ImGuiWindowFlags_NoDecoration |
@@ -44,39 +47,56 @@ namespace aether {
             ImGuiWindowFlags_NoSavedSettings |
             ImGuiWindowFlags_NoFocusOnAppearing |
             ImGuiWindowFlags_NoNav |
-            ImGuiWindowFlags_NoMove;
+            ImGuiWindowFlags_NoMove |
+            ImGuiWindowFlags_NoDocking; // Important: Prevent docking
+
+        // Position: Top-Right of Viewport (Pivot = 1.0, 0.0)
+        ImGui::SetNextWindowPos(ImVec2(m_PosX, m_PosY), ImGuiCond_Always, ImVec2(1.0f, 0.0f));
+
+        // Style: Transparent background
+        ImGui::SetNextWindowBgAlpha(0.35f);
+
+        // Style: Tighter padding for a smaller footprint
+        ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(5.0f, 5.0f));
 
         if (ImGui::Begin("Performance Statistics", &m_Enabled, window_flags))
         {
             Theme theme;
 
-            // Header
-            ImGui::TextColored(theme.AccentCyan, "PERFORMANCE STATS");
-            ImGui::Separator();
+            // 1. FPS Counter (Compact)
+            ImVec4 fpsColor = GetFPSColor(m_CurrentFPS);
+            ImGui::TextColored(fpsColor, "FPS: %.0f", m_CurrentFPS);
 
-            // FPS Counter (large, color-coded)
-            RenderFPSCounter();
+            ImGui::SameLine();
+            ImGui::TextColored(theme.TextMuted, "(%.2f ms)", m_FrameTimeMS);
 
-            ImGui::Spacing();
+            // 2. Renderer Stats (One Line)
+            auto stats = Renderer2D::GetStats();
+            ImGui::Text("Draws: %d  Quads: %d", stats.DrawCalls, stats.QuadCount);
 
-            // Frame timing details
-            RenderFrameStats();
+            // 3. Mini Frame Time Graph
+            std::vector<float> frameTimesMS;
+            frameTimesMS.reserve(m_FrameTimeHistory.size());
+            for (float ft : m_FrameTimeHistory)
+                frameTimesMS.push_back(ft * 1000.0f); // Convert to milliseconds
 
-            ImGui::Spacing();
+            // Scale graph max to either the current max spike or 30 FPS limit (33ms)
+            float maxTime = *std::max_element(frameTimesMS.begin(), frameTimesMS.end());
+            maxTime = std::max(maxTime, 33.33f);
 
-            // Renderer statistics
-            RenderRendererStats();
-
-            ImGui::Spacing();
-
-            // Frame time graph
-            RenderFrameGraph();
-
-            // Footer hint
-            ImGui::Spacing();
-            ImGui::TextDisabled("Toggle in Settings > Performance");
+            ImGui::PlotLines(
+                "##FrameTimeGraph",
+                frameTimesMS.data(),
+                static_cast<int>(frameTimesMS.size()),
+                0,
+                nullptr,
+                0.0f,
+                maxTime,
+                ImVec2(200, 40) // Small fixed size
+            );
         }
         ImGui::End();
+        ImGui::PopStyleVar(); // Pop WindowPadding
     }
 
     void PerformanceOverlay::UpdateFrameHistory(float deltaTime)
@@ -87,132 +107,6 @@ namespace aether {
         // Maintain fixed size (rolling buffer)
         if (m_FrameTimeHistory.size() > MaxFrameHistory)
             m_FrameTimeHistory.pop_front();
-    }
-
-    void PerformanceOverlay::RenderFPSCounter()
-    {
-        Theme theme;
-
-        // Large FPS display with color coding
-        ImGui::PushFont(ImGui::GetIO().Fonts->Fonts[0]); // Use default font but scaled
-        ImGui::SetWindowFontScale(2.0f);
-
-        ImVec4 fpsColor = GetFPSColor(m_CurrentFPS);
-        ImGui::TextColored(fpsColor, "%.0f FPS", m_CurrentFPS);
-
-        ImGui::SetWindowFontScale(1.0f);
-        ImGui::PopFont();
-
-        // Show average in smaller text
-        ImGui::SameLine();
-        ImGui::TextColored(theme.TextMuted, " (avg: %.0f)", m_AverageFPS);
-    }
-
-    void PerformanceOverlay::RenderFrameStats()
-    {
-        Theme theme;
-
-        ImGui::Text("Frame Time:");
-        ImGui::SameLine(120);
-
-        // Color code frame time
-        ImVec4 color = theme.Text;
-        if (m_FrameTimeMS > 33.33f)      // < 30 FPS
-            color = ImVec4(1.0f, 0.3f, 0.3f, 1.0f); // Red
-        else if (m_FrameTimeMS > 16.67f) // < 60 FPS
-            color = ImVec4(1.0f, 0.8f, 0.0f, 1.0f); // Yellow
-        else
-            color = ImVec4(0.3f, 1.0f, 0.3f, 1.0f); // Green
-
-        ImGui::TextColored(color, "%.2f ms", m_FrameTimeMS);
-
-        // Simulation timing diagnostics
-        const double fixedStep = AetherTime::GetFixedTimeStep();
-        const std::uint64_t simTick = AetherTime::GetSimTick();
-
-        ImGui::TextColored(theme.TextMuted, "Sim Tick:   %llu", static_cast<unsigned long long>(simTick));
-        ImGui::TextColored(theme.TextMuted, "Fixed Step: %.3f ms", fixedStep * 1000.0);
-    }
-
-    void PerformanceOverlay::RenderRendererStats()
-    {
-        Theme theme;
-        auto stats = Renderer2D::GetStats();
-
-        ImGui::Text("Renderer:");
-
-        // Draw calls (critical metric)
-        ImGui::Text("  Draw Calls:");
-        ImGui::SameLine(120);
-        ImGui::TextColored(theme.AccentCyan, "%d", stats.DrawCalls);
-
-        // Quad count
-        ImGui::Text("  Quads:");
-        ImGui::SameLine(120);
-        ImGui::Text("%d", stats.QuadCount);
-
-        // Vertices
-        ImGui::Text("  Vertices:");
-        ImGui::SameLine(120);
-        ImGui::TextColored(theme.TextMuted, "%d", stats.GetTotalVertexCount());
-
-        // Batching efficiency
-        if (stats.DrawCalls > 0)
-        {
-            float efficiency = (float)stats.QuadCount / (float)stats.DrawCalls;
-            ImGui::Text("  Efficiency:");
-            ImGui::SameLine(120);
-
-            // Color code efficiency (higher is better)
-            ImVec4 effColor = theme.Text;
-            if (efficiency > 1000.0f)
-                effColor = theme.AccentSuccess; // Excellent batching
-            else if (efficiency > 100.0f)
-                effColor = ImVec4(0.3f, 1.0f, 0.3f, 1.0f); // Good batching
-            else if (efficiency < 10.0f)
-                effColor = ImVec4(1.0f, 0.8f, 0.0f, 1.0f); // Poor batching
-
-            ImGui::TextColored(effColor, "%.0f q/call", efficiency);
-        }
-    }
-
-    void PerformanceOverlay::RenderFrameGraph()
-    {
-        // Convert deque to vector for ImGui::PlotLines
-        std::vector<float> frameTimesMS;
-        frameTimesMS.reserve(m_FrameTimeHistory.size());
-        for (float ft : m_FrameTimeHistory)
-            frameTimesMS.push_back(ft * 1000.0f); // Convert to milliseconds
-
-        // Draw frame time graph
-        ImGui::Text("Frame Time History (120 frames):");
-
-        // Calculate min/max for scale
-        float minTime = *std::min_element(frameTimesMS.begin(), frameTimesMS.end());
-        float maxTime = *std::max_element(frameTimesMS.begin(), frameTimesMS.end());
-
-        // Add some padding to max for better visualization
-        maxTime = std::max(maxTime * 1.2f, 33.33f); // At least show 30 FPS threshold
-
-        ImGui::PlotLines(
-            "##FrameTimeGraph",
-            frameTimesMS.data(),
-            static_cast<int>(frameTimesMS.size()),
-            0,
-            nullptr,
-            minTime,
-            maxTime,
-            ImVec2(250, 80)
-        );
-
-        // Draw reference lines (16.67ms = 60 FPS, 33.33ms = 30 FPS)
-        ImGui::TextColored(ImVec4(0.3f, 1.0f, 0.3f, 1.0f), "16.67ms");
-        ImGui::SameLine();
-        ImGui::TextDisabled("(60 FPS)");
-        ImGui::SameLine(150);
-        ImGui::TextColored(ImVec4(1.0f, 0.8f, 0.0f, 1.0f), "33.33ms");
-        ImGui::SameLine();
-        ImGui::TextDisabled("(30 FPS)");
     }
 
     ImVec4 PerformanceOverlay::GetFPSColor(float fps)
