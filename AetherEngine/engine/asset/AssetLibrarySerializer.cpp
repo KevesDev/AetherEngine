@@ -2,6 +2,7 @@
 #include "../core/Log.h"
 #include "../vendor/json.hpp"
 #include <fstream>
+#include <exception>
 
 using json = nlohmann::json;
 
@@ -53,7 +54,14 @@ namespace aether {
         }
         catch (const json::parse_error& e)
         {
-            AETHER_CORE_ERROR("Failed to parse Asset Library: {}", e.what());
+            AETHER_CORE_ERROR("Failed to parse Asset Library (JSON Syntax): {}", e.what());
+            return false;
+        }
+        // Catch std::exception (e.g. std::length_error "string too long")
+        // This handles cases where the file contains binary garbage or corrupted data.
+        catch (const std::exception& e)
+        {
+            AETHER_CORE_CRITICAL("Failed to parse Asset Library (Data Corruption): {}", e.what());
             return false;
         }
 

@@ -34,6 +34,12 @@ namespace aether {
          */
         void SetShowRawAssets(bool show) { m_ShowRawAssets = show; }
 
+        /**
+         * @brief Returns the current visibility state of raw source files.
+         * Added to support the View menu toggle in EditorLayer.
+         */
+        bool GetShowRawAssets() const { return m_ShowRawAssets; }
+
         std::filesystem::path GetCurrentDirectory() const { return m_CurrentDirectory; }
 
     private:
@@ -55,7 +61,6 @@ namespace aether {
 
         // --- Import Tool ---
         FileBrowser m_FileBrowser;
-        bool m_ShowImportPopup = false; // Defer flag for ID stack
 
         AssetCallback m_OnAssetOpened;
     };

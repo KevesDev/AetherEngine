@@ -10,6 +10,7 @@
 #include <fstream>
 #include <filesystem>
 #include <sstream>
+#include <exception>
 
 namespace aether {
 
@@ -27,7 +28,7 @@ namespace aether {
     static void SerializeEntity(json& out, Entity entity)
     {
         // 1. Identity (Mandatory for persistence)
-		// need to use uint64_t to avoid JSON number precision issues
+        // need to use uint64_t to avoid JSON number precision issues
         if (entity.HasComponent<IDComponent>()) {
             out["EntityID"] = (uint64_t)entity.GetComponent<IDComponent>().ID;
         }
@@ -61,8 +62,6 @@ namespace aether {
         }
 
         // 5. Camera (Pure Data)
-        // Serializes the flat data structure defined in Components.h.
-        // Projection matrices are recalculated at runtime by the Scene/Renderer.
         if (entity.HasComponent<CameraComponent>()) {
             auto& cc = entity.GetComponent<CameraComponent>();
             out["CameraComponent"] = {
@@ -115,6 +114,10 @@ namespace aether {
             AETHER_CORE_ERROR("SceneSerializer: Could not open file '{0}' for reading.", filepath.string());
             return false;
         }
+
+        // TRACE: Confirm if we are entering scene deserialization
+        AETHER_CORE_TRACE("SceneSerializer: Deserializing scene file '{0}'", filepath.string());
+
         return DeserializeFromStream(fin);
     }
 
@@ -123,28 +126,18 @@ namespace aether {
         json out = json::object();
         out["Scene"] = "Untitled";
 
-        // 1. Serialize System Configuration
         out["Systems"] = m_Scene->GetSystemConfigs();
-
-        // 2. Serialize Entities
         out["Entities"] = json::array();
 
-        // Use IDComponent view to iterate all persistent entities.
-        // IDComponent is the authoritative flag for "Saved to Disk".
         auto view = m_Scene->GetRegistry().view<IDComponent>();
         for (auto entityID : view)
         {
-            // Verify Entity Construction:
-            // Entity.h constructor takes (EntityID, Registry*).
-            // We pass the registry from the Scene.
             Entity entity = { entityID, &m_Scene->GetRegistry() };
-
             if (!entity) continue;
 
             json e = json::object();
             SerializeEntity(e, entity);
 
-            // Only append if serialization was successful (has ID)
             if (e.contains("EntityID")) {
                 out["Entities"].push_back(e);
             }
@@ -159,6 +152,7 @@ namespace aether {
         try {
             input >> data;
         }
+        // Catch std::exception (including std::length_error)
         catch (const std::exception& e) {
             AETHER_CORE_ERROR("SceneSerializer: JSON Parse Error: {0}", e.what());
             return false;
@@ -182,31 +176,23 @@ namespace aether {
                 if (!entityJson["TagComponent"].is_null())
                     name = entityJson["TagComponent"]["Tag"];
 
-                // Create Entity with stable UUID (Preserves relationships)
                 Entity deserializedEntity = m_Scene->CreateEntityWithUUID(UUID(uuidInt), name);
 
-                // Transform
                 if (!entityJson["TransformComponent"].is_null()) {
                     auto& tc = deserializedEntity.GetComponent<TransformComponent>();
                     auto& t = entityJson["TransformComponent"];
                     tc.X = t["Translation"][0]; tc.Y = t["Translation"][1];
                     tc.Rotation = t["Rotation"];
                     tc.ScaleX = t["Scale"][0]; tc.ScaleY = t["Scale"][1];
-
-                    // Initialize previous state to current state to prevent interpolation artifacts
-                    tc.PrevX = tc.X;
-                    tc.PrevY = tc.Y;
-                    tc.PrevRotation = tc.Rotation;
+                    tc.PrevX = tc.X; tc.PrevY = tc.Y; tc.PrevRotation = tc.Rotation;
                 }
 
-                // Sprite
                 if (!entityJson["SpriteComponent"].is_null()) {
                     auto& sc = deserializedEntity.AddComponent<SpriteComponent>();
                     auto& c = entityJson["SpriteComponent"]["Color"];
                     sc.R = c[0]; sc.G = c[1]; sc.B = c[2]; sc.A = c[3];
                 }
 
-                // Camera
                 if (!entityJson["CameraComponent"].is_null()) {
                     auto& cc = deserializedEntity.AddComponent<CameraComponent>();
                     auto& c = entityJson["CameraComponent"];
@@ -221,14 +207,12 @@ namespace aether {
                     cc.FixedAspectRatio = c["FixedAspectRatio"];
                 }
 
-                // Player Controller
                 if (!entityJson["PlayerControllerComponent"].is_null()) {
                     auto& pcc = deserializedEntity.AddComponent<PlayerControllerComponent>();
                     pcc.PlayerIndex = entityJson["PlayerControllerComponent"]["PlayerIndex"];
                     pcc.ActiveMappingContext = entityJson["PlayerControllerComponent"]["ActiveMappingContext"];
                 }
 
-                // Replication
                 if (!entityJson["ReplicationComponent"].is_null()) {
                     auto& rc = deserializedEntity.AddComponent<ReplicationComponent>();
                     auto& r = entityJson["ReplicationComponent"];

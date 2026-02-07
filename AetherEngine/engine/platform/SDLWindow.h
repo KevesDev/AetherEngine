@@ -34,7 +34,7 @@ namespace aether {
         virtual void Init(const WindowProps& props);
         virtual void Shutdown();
 
-        // CRITICAL FIX: This uses the SDL Library type (SDL_Window*),
+        // This uses the SDL Library type (SDL_Window*),
         // NOT our class type (SDLWindow*).
         SDL_Window* m_Window;
 

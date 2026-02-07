@@ -5,6 +5,7 @@
 #include "Project.h" 
 #include <fstream>
 #include <vector>
+#include <exception> // Required for std::exception
 
 using json = nlohmann::json;
 
@@ -69,6 +70,7 @@ namespace aether {
 
         try {
             // 1. PARSE FROM BINARY (BSON)
+            // Note: from_bson can throw std::length_error (string too long) if data is corrupt
             json data = json::from_bson(binaryData);
             auto& projectData = data["Project"];
 
@@ -91,8 +93,9 @@ namespace aether {
             config.StaticReplicationRateHz = projectData.value("StaticReplicationRateHz", 5.0f);
             config.FrequentReplicationRateHz = projectData.value("FrequentReplicationRateHz", 20.0f);
         }
-        catch (json::exception& e) {
-            AETHER_CORE_ERROR("ProjectSerializer: BSON Parsing Error: {0}. File may be corrupted.", e.what());
+        // Safety check - Use std::exception to catch std::length_error which bypasses json::exception
+        catch (const std::exception& e) {
+            AETHER_CORE_ERROR("ProjectSerializer: Critical Parsing Error: {0}. The project file '{1}' is likely corrupted.", e.what(), filepath.string());
             return false;
         }
 

@@ -170,27 +170,52 @@ namespace aether {
 
     std::shared_ptr<Texture2D> AssetManager::LoadTexture2D(const std::filesystem::path& assetPath)
     {
+        // DEBUG: Trace exact file causing the crash
+        AETHER_CORE_TRACE("AssetManager::LoadTexture2D: Attempting to load '{0}'", assetPath.string());
+
         std::ifstream stream(assetPath, std::ios::binary);
         if (!stream) {
             AETHER_CORE_ERROR("AssetManager::LoadTexture2D - Failed to open file: {}", assetPath.string());
             return nullptr;
         }
 
+        // 1. Read and Validate Header
+        // Strictly check for AETH magic signature to prevent raw file crashes.
         AssetHeader header;
         stream.read(reinterpret_cast<char*>(&header), sizeof(AssetHeader));
 
+        bool isAetherAsset = (header.Magic[0] == 'A' && header.Magic[1] == 'E' && header.Magic[2] == 'T' && header.Magic[3] == 'H');
+
+        if (!isAetherAsset)
+        {
+            // If the header is missing, we must NOT proceed to JSON parsing.
+            // Log the specific file that violated the contract.
+            AETHER_CORE_CRITICAL("AssetManager: FATAL - File '{}' is not a valid .aeth asset! (Magic Header Missing)", assetPath.string());
+
+            // For diagnosis, we stop here. In production, we might fallback.
+            stream.close();
+            return nullptr;
+        }
+
+        // 2. Parse Metadata
         json meta;
         try {
             stream >> meta;
         }
         catch (const json::parse_error& e) {
-            AETHER_CORE_ERROR("AssetManager::LoadTexture2D - JSON parse error: {}", e.what());
+            AETHER_CORE_ERROR("AssetManager::LoadTexture2D - JSON parse error in '{}': {}", assetPath.string(), e.what());
+            return nullptr;
+        }
+        catch (const std::exception& e) {
+            // Catch std::length_error or other stl exceptions here
+            AETHER_CORE_CRITICAL("AssetManager::LoadTexture2D - Exception parsing metadata for '{}': {}", assetPath.string(), e.what());
             return nullptr;
         }
 
+        // 3. Load Source Texture
         std::string sourceRel = meta.value("Source", "");
         if (sourceRel.empty()) {
-            AETHER_CORE_ERROR("AssetManager::LoadTexture2D - No source file specified");
+            AETHER_CORE_ERROR("AssetManager::LoadTexture2D - No source file specified in metadata: {}", assetPath.string());
             return nullptr;
         }
 
@@ -209,7 +234,7 @@ namespace aether {
             return std::make_shared<Texture2D>(sourcePath.string(), spec);
         }
         catch (const std::exception& e) {
-            AETHER_CORE_ERROR("AssetManager: Failed to load texture '{0}'. Reason: {1}", sourceRel, e.what());
+            AETHER_CORE_ERROR("AssetManager: Failed to load texture source '{}'. Reason: {}", sourceRel, e.what());
             return nullptr;
         }
     }

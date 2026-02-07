@@ -90,7 +90,7 @@ namespace aether {
     {
         ImGuiIO& io = ImGui::GetIO();
 
-        // FIX: Use Engine::Get() here!
+        // Use Engine::Get() here!
         Engine& app = Engine::Get();
         io.DisplaySize = ImVec2((float)app.GetWindow().GetWidth(), (float)app.GetWindow().GetHeight());
 

@@ -19,7 +19,7 @@ int main(int argc, char* argv[])
             aether::VFS::Mount("/engine", "EngineContent");
         }
         else {
-            AETHER_CORE_CRITICAL("CRITICAL MISSING DATA: 'EngineContent' folder not found.");
+            AETHER_CORE_CRITICAL("[Editor/main]CRITICAL MISSING DATA: 'EngineContent' folder not found.");
         }
 
         aether::EngineSpecification spec;
@@ -49,13 +49,13 @@ int main(int argc, char* argv[])
         engine->Run();
     }
     catch (const std::exception& e) {
-        AETHER_CORE_CRITICAL("FATAL CRASH: Unhandled Exception: {}", e.what());
+        AETHER_CORE_CRITICAL("[Editor/main]FATAL CRASH: Unhandled Exception: {}", e.what());
         std::cout << "Press ENTER to exit..." << std::endl;
         std::cin.get();
         return -1;
     }
     catch (...) {
-        AETHER_CORE_CRITICAL("FATAL CRASH: Unknown Exception occurred!");
+        AETHER_CORE_CRITICAL("[Editor/main]FATAL CRASH: Unknown Exception occurred!");
         std::cout << "Press ENTER to exit..." << std::endl;
         std::cin.get();
         return -1;
